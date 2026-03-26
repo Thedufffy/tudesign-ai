@@ -4,29 +4,66 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-function buildPrompt(style: string, note: string, variation: number) {
-  const variationText = [
+type Mode = "retouch" | "redesign";
+
+function buildPrompt(
+  mode: Mode,
+  style: string,
+  note: string,
+  variation: number
+) {
+  const retouchVariationText = [
+    "Keep the enhancement balanced, elegant, and highly realistic.",
+    "Keep the same design but add slightly stronger styling, lighting contrast, and material richness.",
+    "Keep the same design with a softer, calmer, more refined and atmospheric finish.",
+  ][variation] || "Create a refined and photorealistic retouch.";
+
+  const redesignVariationText = [
     "Create a balanced and elegant redesign.",
     "Create a slightly bolder and more characterful redesign.",
     "Create a softer, calmer, more refined redesign.",
   ][variation] || "Create a high-quality redesign.";
 
+  if (mode === "retouch") {
+    return `
+Retouch this interior image.
+
+Style: ${style}
+Extra: ${note || "No extra note provided."}
+
+IMPORTANT:
+- Keep the same room layout
+- Keep the same camera angle
+- Keep the same furniture layout as much as possible
+- Preserve the architectural proportions
+- Do not redesign the space from scratch
+- Do not change the core concept of the room
+- Improve lighting, materials, texture realism, decoration balance, and atmosphere
+- Make the result more photorealistic
+- Keep the image premium, elegant, and believable
+
+Variation direction:
+${retouchVariationText}
+`;
+  }
+
   return `
 Redesign this interior space.
 
 Style: ${style}
-Extra: ${note}
+Extra: ${note || "No extra note provided."}
 
 IMPORTANT:
 - Keep the same room layout
 - Keep the same camera angle
 - Preserve the architectural proportions
-- Improve materials, lighting, styling, and atmosphere
+- Redesign materials, furniture language, color palette, styling, and atmosphere
+- Create a new interior design interpretation based on the selected style
 - Make it photorealistic
 - Produce a premium interior design result
 
 Variation direction:
-${variationText}
+${redesignVariationText}
 `;
 }
 
@@ -35,8 +72,11 @@ export async function POST(req: Request) {
     const formData = await req.formData();
 
     const file = formData.get("file");
-    const style = String(formData.get("style") || "");
+    const style = String(formData.get("style") || "Modern");
     const note = String(formData.get("note") || "");
+    const rawMode = String(formData.get("mode") || "retouch");
+
+    const mode: Mode = rawMode === "redesign" ? "redesign" : "retouch";
 
     if (!(file instanceof File)) {
       return Response.json(
@@ -46,9 +86,9 @@ export async function POST(req: Request) {
     }
 
     const prompts = [
-      buildPrompt(style, note, 0),
-      buildPrompt(style, note, 1),
-      buildPrompt(style, note, 2),
+      buildPrompt(mode, style, note, 0),
+      buildPrompt(mode, style, note, 1),
+      buildPrompt(mode, style, note, 2),
     ];
 
     const results = await Promise.all(
