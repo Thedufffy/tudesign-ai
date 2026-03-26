@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { UploadCloud, Square, Minus, Leaf, Gem, Clock } from "lucide-react";
+import {
+  UploadCloud,
+  Square,
+  Minus,
+  Leaf,
+  Gem,
+  Clock,
+  Wand2,
+  Sparkles,
+} from "lucide-react";
 
 type ImageResult = string[];
 
@@ -11,6 +20,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState<ImageResult>([]);
   const [selectedStyle, setSelectedStyle] = useState("Modern");
+  const [mode, setMode] = useState<"retouch" | "redesign">("retouch");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [leadName, setLeadName] = useState("");
@@ -58,6 +68,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("style", selectedStyle);
+      formData.append("mode", mode);
       formData.append("note", note);
 
       const res = await fetch("/api/generate", {
@@ -97,6 +108,9 @@ Merhaba, tuDesign AI üzerinden oluşturduğum tasarım hakkında sizinle ilerle
 İsim: ${leadName}
 İletişim: ${leadContact}
 
+Düzenleme modu: ${
+      mode === "retouch" ? "Rötuşla" : "Yeniden Yorumla"
+    }
 Seçtiğim stil: ${selectedStyle}
 Ek not: ${note || "Belirtilmedi"}
 
@@ -108,7 +122,6 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
     )}`;
 
     window.open(whatsappUrl, "_blank");
-
     setLeadMessage("Yönlendiriliyorsun...");
   };
 
@@ -133,8 +146,8 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
           </h1>
 
           <p className="text-neutral-500 mb-6">
-            Fotoğrafını yükle, stilini seç ve AI sana profesyonel iç mekan
-            varyasyonları oluştursun.
+            Fotoğrafını yükle, düzenleme modunu ve stilini seç. tuDesign AI,
+            mekanın için güçlü iç mekan varyasyonları oluştursun.
           </p>
 
           <div className="w-20 h-[2px] bg-black/10 mt-6 rounded-full"></div>
@@ -149,7 +162,7 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
               const droppedFile = e.dataTransfer.files?.[0];
               if (droppedFile) handleFile(droppedFile);
             }}
-            className="border border-dashed rounded-xl p-8 text-center mb-4 cursor-pointer bg-white/60"
+            className="border border-dashed rounded-xl p-8 text-center mb-5 cursor-pointer bg-white/60"
           >
             {!preview ? (
               <>
@@ -181,6 +194,44 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
             />
           </div>
 
+          <div className="mb-5">
+            <p className="text-sm mb-2">Düzenleme modu</p>
+
+            <div className="flex gap-2 flex-wrap mb-2">
+              <button
+                type="button"
+                onClick={() => setMode("retouch")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm transition ${
+                  mode === "retouch"
+                    ? "bg-black text-white border-black"
+                    : "bg-white text-black border-black/20"
+                }`}
+              >
+                <Wand2 size={14} />
+                Rötuşla
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode("redesign")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm transition ${
+                  mode === "redesign"
+                    ? "bg-black text-white border-black"
+                    : "bg-white text-black border-black/20"
+                }`}
+              >
+                <Sparkles size={14} />
+                Yeniden Yorumla
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-500 leading-5">
+              {mode === "retouch"
+                ? "Mevcut tasarımı koruyarak ışık, malzeme ve atmosferi geliştirir."
+                : "Mekanı referans alarak yeni bir tasarım dili ve güçlü bir alternatif üretir."}
+            </p>
+          </div>
+
           <div className="mb-4">
             <p className="text-sm mb-2">Stil seçimi</p>
 
@@ -192,8 +243,8 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
                   onClick={() => setSelectedStyle(s.name)}
                   className={`flex items-center gap-2 px-3 py-1 rounded-full border text-sm transition ${
                     selectedStyle === s.name
-                      ? "bg-black text-white"
-                      : "bg-white"
+                      ? "bg-black text-white border-black"
+                      : "bg-white border-black/20"
                   }`}
                 >
                   {s.icon}
@@ -216,7 +267,11 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
             disabled={loading}
             className="w-full bg-black text-white py-3 rounded-xl shadow-lg hover:scale-[1.02] transition disabled:opacity-60 disabled:hover:scale-100"
           >
-            {loading ? "AI düşünüyor..." : "tuDesign ile yeniden yorumla"}
+            {loading
+              ? "AI düşünüyor..."
+              : mode === "retouch"
+              ? "Görseli rötuşla"
+              : "Yeni tasarım oluştur"}
           </button>
 
           {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
@@ -226,9 +281,13 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
       {loading && (
         <div className="text-center py-20">
           <div className="w-10 h-10 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-lg font-medium">AI düşünüyor...</p>
+          <p className="text-lg font-medium">
+            {mode === "retouch" ? "AI rötuş yapıyor..." : "AI yeni tasarım üretiyor..."}
+          </p>
           <p className="text-sm text-neutral-400 mt-2">
-            Mekanın analiz ediliyor
+            {mode === "retouch"
+              ? "Mekanın detayları iyileştiriliyor"
+              : "Mekan yeni bir tasarım diliyle yorumlanıyor"}
           </p>
         </div>
       )}
@@ -238,7 +297,9 @@ Bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
           <div className="mb-6">
             <p className="text-sm text-neutral-400 mb-1">Sonuçlar hazır</p>
             <h2 className="text-xl font-medium">
-              tuDesign AI farkıyla 3 varyasyon hazır...!
+              {mode === "retouch"
+                ? "tuDesign AI farkıyla rötuşlu varyasyonlar hazır...!"
+                : "tuDesign AI farkıyla yeni tasarım varyasyonları hazır...!"}
             </h2>
           </div>
 
