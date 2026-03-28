@@ -1,0 +1,65 @@
+[
+  {
+    "id": "9c0ca181-29be-4738-a328-4af4174fb215",
+    "title": "5551231",
+    "subtitle": "55512123",
+    "image": "https://dbhu9vsjvi6ob4es.public.blob.vercel-storage.com/references/1774720665290-D%C3%9CZENLENM%C4%B0%C5%9E%20ALT%20KAT%20MERD%C4%B0VEN%20HOL%C3%9C.png",
+    "featured": true
+  },
+  {
+    "id": "63c1de1d-932e-4761-b4a9-a24b896eb3a3",
+    "title": "777",
+    "subtitle": "999",
+    "image": "https://dbhu9vsjvi6ob4es.public.blob.vercel-storage.com/references/1774720330814-0139aa4cdcdb2a2a8b61e2af218c2820.jpg",
+    "featured": true
+  },
+  {
+    "id": "d2944e57-970c-4940-a06b-df3be05dacb5",
+    "title": "777",
+    "subtitle": "777",
+    "image": "https://dbhu9vsjvi6ob4es.public.blob.vercel-storage.com/references/1774720322888-WhatsApp%20Image%202026-03-25%20at%2017.33.54.jpeg",
+    "featured": true
+  },
+  {
+    "id": "13a80734-bea6-4117-aa72-58608ef6d748",
+    "title": "66",
+    "subtitle": "333",
+    "image": "https://dbhu9vsjvi6ob4es.public.blob.vercel-storage.com/references/1774720315710-WhatsApp%20Image%202026-03-23%20at%2010.51.58.jpeg",
+    "featured": true
+  },
+  {
+    "id": "53ef1d1a-2377-42d3-b644-c40ee519630d",
+    "title": "1123",
+    "subtitle": "3123123",
+    "image": "https://dbhu9vsjvi6ob4es.public.blob.vercel-storage.com/references/1774719262637-Ekran%20g%C3%B6r%C3%BCnt%C3%BCs%C3%BC%202026-03-12%20194222.png",
+    "featured": true
+  },
+  {
+    "id": "b2f913c4-4fcf-4bbe-be71-4c86ff2b7d48",
+    "title": "sssss",
+    "subtitle": "33333",
+    "image": "https://dbhu9vsjvi6ob4es.public.blob.vercel-storage.com/references/1774714400255-D%C3%9CZENLENM%C4%B0%C5%9E%20%C3%9CST%20WC.png",
+    "featured": false
+  },
+  {
+    "id": "1",
+    "title": "Residential / Istanbul",
+    "subtitle": "AI Assisted Interior Redesign",
+    "image": "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80",
+    "featured": true
+  },
+  {
+    "id": "2",
+    "title": "Retail / Ankara",
+    "subtitle": "Premium Space Transformation",
+    "image": "https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80",
+    "featured": true
+  },
+  {
+    "id": "3",
+    "title": "Hospitality / Bodrum",
+    "subtitle": "Concept to Atmosphere",
+    "image": "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80",
+    "featured": false
+  }
+]
