@@ -32,6 +32,14 @@ Output:
 `;
 }
 
+function isValidImageFile(file: File) {
+  return (
+    file.type === "image/png" ||
+    file.type === "image/jpeg" ||
+    file.type === "image/webp"
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const userId = await getFashionSessionUserId();
@@ -54,18 +62,21 @@ export async function POST(req: Request) {
 
     const formData = await req.formData();
 
-    const file = formData.get("file") as File;
-    const country = String(formData.get("country") || "");
-    const promptText = String(formData.get("prompt") || "");
+    const file = formData.get("file");
+    const country = String(formData.get("country") || "").trim();
+    const promptText = String(formData.get("prompt") || "").trim();
 
-    if (!file || !country || !promptText) {
+    if (!(file instanceof File) || !country || !promptText) {
+      return NextResponse.json({ error: "Eksik veri." }, { status: 400 });
+    }
+
+    if (!isValidImageFile(file)) {
       return NextResponse.json(
-        { error: "Eksik veri." },
+        { error: "Sadece PNG, JPG veya WEBP yükleyebilirsiniz." },
         { status: 400 }
       );
     }
 
-    // kredi kontrol
     const creditResult = decrementCredit(userId, 1);
 
     if (!creditResult.ok) {
@@ -77,30 +88,48 @@ export async function POST(req: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
+    const imageFile = new File(
+      [new Uint8Array(buffer)],
+      file.name || "upload.png",
+      {
+        type: file.type || "image/png",
+      }
+    );
+
     const prompt = buildPrompt(country, promptText);
 
     const result = await openai.images.edit({
       model: "gpt-image-1",
-      image: buffer,
+      image: imageFile,
       prompt,
       n: 3,
       size: "1024x1024",
     });
 
-    const images = result.data.map((img) => {
-      return `data:image/png;base64,${img.b64_json}`;
-    });
+    const images =
+      result.data?.flatMap((img) =>
+        img.b64_json ? [`data:image/png;base64,${img.b64_json}`] : []
+      ) || [];
+
+    if (images.length === 0) {
+      return NextResponse.json(
+        { error: "AI görsel üretti ama çıktı alınamadı." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
       images,
       remainingCredits: creditResult.credits,
     });
-  } catch (error) {
-    console.error(error);
+  } catch (error: any) {
+    console.error("Generate route error full:", error);
+    console.error("Generate route error message:", error?.message);
+    console.error("Generate route error response:", error?.response?.data);
 
     return NextResponse.json(
-      { error: "AI üretim hatası." },
+      { error: error?.message || "AI üretim hatası." },
       { status: 500 }
     );
   }
