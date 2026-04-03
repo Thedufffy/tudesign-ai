@@ -327,9 +327,13 @@ export async function POST(req: Request) {
     const referenceBoard = await createReferenceBoard(uploadedItems);
     const finalPrompt = buildPrompt(country, prompt, uploadedParts);
 
-    const boardAsFile = new File([referenceBoard], "reference-board.png", {
-      type: "image/png",
-    });
+    const boardAsFile = new File(
+      [new Uint8Array(referenceBoard)],
+      "reference-board.png",
+      {
+        type: "image/png",
+      }
+    );
 
     const result = await openai.images.edit({
       model: "gpt-image-1",
