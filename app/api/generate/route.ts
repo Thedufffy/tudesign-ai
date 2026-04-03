@@ -1,128 +1,107 @@
+import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getFashionSessionUserId } from "@/lib/fashion-auth";
+import { decrementCredit, findUserById } from "@/lib/fashion-store";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-type Mode = "retouch" | "redesign";
-
-function buildPrompt(
-  mode: Mode,
-  style: string,
-  note: string,
-  variation: number
-) {
-  const retouchVariationText = [
-    "Keep the enhancement balanced, elegant, and highly realistic.",
-    "Keep the same design but add slightly stronger styling, lighting contrast, and material richness.",
-    "Keep the same design with a softer, calmer, more refined and atmospheric finish.",
-  ][variation] || "Create a refined and photorealistic retouch.";
-
-  const redesignVariationText = [
-    "Create a balanced and elegant redesign.",
-    "Create a slightly bolder and more characterful redesign.",
-    "Create a softer, calmer, more refined redesign.",
-  ][variation] || "Create a high-quality redesign.";
-
-  if (mode === "retouch") {
-    return `
-Retouch this interior image.
-
-Style: ${style}
-Extra: ${note || "No extra note provided."}
-
-IMPORTANT:
-- Keep the same room layout
-- Keep the same camera angle
-- Keep the same furniture layout as much as possible
-- Preserve the architectural proportions
-- Do not redesign the space from scratch
-- Do not change the core concept of the room
-- Improve lighting, materials, texture realism, decoration balance, and atmosphere
-- Make the result more photorealistic
-- Keep the image premium, elegant, and believable
-
-Variation direction:
-${retouchVariationText}
-`;
-  }
-
+function buildPrompt(country: string, userPrompt: string) {
   return `
-Redesign this interior space.
-
-Style: ${style}
-Extra: ${note || "No extra note provided."}
+Create a realistic fashion model wearing the provided clothing.
 
 IMPORTANT:
-- Keep the same room layout
-- Keep the same camera angle
-- Preserve the architectural proportions
-- Redesign materials, furniture language, color palette, styling, and atmosphere
-- Create a new interior design interpretation based on the selected style
-- Make it photorealistic
-- Produce a premium interior design result
+- Keep the clothing EXACTLY the same
+- Do not change color, shape, or design
+- Preserve all garment details
 
-Variation direction:
-${redesignVariationText}
+Model:
+- Natural human pose
+- Fashion photography style
+
+Scene:
+- ${country}
+- ${userPrompt}
+- realistic environment
+- cinematic natural lighting
+
+Output:
+- ultra realistic
+- premium fashion photography
 `;
 }
 
 export async function POST(req: Request) {
   try {
+    const userId = await getFashionSessionUserId();
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Oturum bulunamadı." },
+        { status: 401 }
+      );
+    }
+
+    const user = findUserById(userId);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Kullanıcı bulunamadı." },
+        { status: 404 }
+      );
+    }
+
     const formData = await req.formData();
 
-    const file = formData.get("file");
-    const style = String(formData.get("style") || "Modern");
-    const note = String(formData.get("note") || "");
-    const rawMode = String(formData.get("mode") || "retouch");
+    const file = formData.get("file") as File;
+    const country = String(formData.get("country") || "");
+    const promptText = String(formData.get("prompt") || "");
 
-    const mode: Mode = rawMode === "redesign" ? "redesign" : "retouch";
-
-    if (!(file instanceof File)) {
-      return Response.json(
-        { error: "Geçerli bir görsel bulunamadı." },
+    if (!file || !country || !promptText) {
+      return NextResponse.json(
+        { error: "Eksik veri." },
         { status: 400 }
       );
     }
 
-    const prompts = [
-      buildPrompt(mode, style, note, 0),
-      buildPrompt(mode, style, note, 1),
-      buildPrompt(mode, style, note, 2),
-    ];
+    // kredi kontrol
+    const creditResult = decrementCredit(userId, 1);
 
-    const results = await Promise.all(
-      prompts.map((prompt) =>
-        openai.images.edit({
-          model: "gpt-image-1",
-          image: file,
-          prompt,
-          size: "1024x1024",
-        })
-      )
-    );
-
-    const images = results
-      .map((result) => result.data?.[0]?.b64_json)
-      .filter(Boolean)
-      .map((b64) => `data:image/png;base64,${b64}`);
-
-    if (!images.length) {
-      return Response.json(
-        { error: "AI görsel üretemedi." },
-        { status: 500 }
+    if (!creditResult.ok) {
+      return NextResponse.json(
+        { error: "Krediniz yetersiz." },
+        { status: 402 }
       );
     }
 
-    return Response.json({ images });
-  } catch (err: any) {
-    console.error("AI ERROR:", err);
+    const buffer = Buffer.from(await file.arrayBuffer());
 
-    const actualMessage =
-      err?.error?.message ||
-      err?.message ||
-      "Bilinmeyen bir hata oluştu.";
+    const prompt = buildPrompt(country, promptText);
 
-    return Response.json({ error: actualMessage }, { status: 500 });
+    const result = await openai.images.edit({
+      model: "gpt-image-1",
+      image: buffer,
+      prompt,
+      n: 3,
+      size: "1024x1024",
+    });
+
+    const images = result.data.map((img) => {
+      return `data:image/png;base64,${img.b64_json}`;
+    });
+
+    return NextResponse.json({
+      success: true,
+      images,
+      remainingCredits: creditResult.credits,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      { error: "AI üretim hatası." },
+      { status: 500 }
+    );
   }
 }
