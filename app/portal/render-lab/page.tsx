@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+type Provider = "gemini" | "chatgpt" | "openai";
+
 type InterpretedChange = {
   target: string;
   action: string;
@@ -19,20 +21,21 @@ type InterpretedResult = {
   missing_questions: string[];
 };
 
-type PromptVariation = {
-  title: string;
-  prompt: string;
-};
-
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  kind?: "normal" | "interpretation" | "success" | "error";
+  kind?: "normal" | "interpretation" | "success" | "error" | "question";
 };
 
 function createId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function getEngineLabel(provider: Provider) {
+  if (provider === "gemini") return "GearRenderEngine çalışıyor";
+  if (provider === "chatgpt") return "ChargeRenderEngine çalışıyor";
+  return "OnixRenderEngine çalışıyor";
 }
 
 export default function RenderPage() {
@@ -40,9 +43,10 @@ export default function RenderPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
 
+  const [provider, setProvider] = useState<Provider>("openai");
+
   const [interpreted, setInterpreted] = useState<InterpretedResult | null>(null);
-  const [variations, setVariations] = useState<PromptVariation[]>([]);
-  const [results, setResults] = useState<string[]>([]);
+  const [result, setResult] = useState<string | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isInterpreting, setIsInterpreting] = useState(false);
@@ -54,7 +58,7 @@ export default function RenderPage() {
       role: "assistant",
       kind: "normal",
       content:
-        "Merhaba. Revize isteğini Türkçe yaz. Önce seni anlayayım, sonra istersek üretime geçelim.",
+        "Merhaba. Revize isteğini Türkçe yaz. İsteğini profesyonel şekilde yorumlayacağım. Belirtmediğin alanlarda mevcut ışık, kamera açısı, kadraj ve mekan kurgusunu koruyarak ilerleyeceğim.",
     },
   ]);
 
@@ -80,24 +84,14 @@ export default function RenderPage() {
     setMessages((prev) => [...prev, message]);
   }
 
-  function buildAssistantInterpretationText(data: InterpretedResult) {
-    const lines: string[] = [];
+  async function parseJsonSafely(res: Response) {
+    const raw = await res.text();
 
-    lines.push("İsteğini şöyle anladım:");
-    lines.push("");
-    lines.push(data.summary_tr);
-
-    if (data.missing_questions?.length > 0) {
-      lines.push("");
-      lines.push("Netleşebilecek detaylar:");
-      for (const q of data.missing_questions) {
-        lines.push(`- ${q}`);
-      }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(raw ? `JSON yerine şu döndü: ${raw.slice(0, 200)}` : "Sunucudan boş yanıt döndü.");
     }
-
-    lines.push("");
-    lines.push("İstersen görseli yükleyip bu haliyle üretime geçebiliriz.");
-    return lines.join("\n");
   }
 
   async function handleInterpret() {
@@ -112,7 +106,7 @@ export default function RenderPage() {
     });
 
     setInput("");
-    setResults([]);
+    setResult(null);
     setIsInterpreting(true);
 
     try {
@@ -121,51 +115,28 @@ export default function RenderPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: userText }),
+        body: JSON.stringify({
+          prompt: userText,
+          provider,
+        }),
       });
 
-      const raw = await res.text();
+      const data = await parseJsonSafely(res);
 
-      let data: any;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error(`JSON yerine şu döndü: ${raw.slice(0, 200)}`);
-      }
-
-      if (!res.ok) {
+      if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Yorumlama başarısız oldu.");
       }
 
-      const interpretedData: InterpretedResult =
-        data?.interpreted ??
-        {
-          summary_tr: data?.interpretedPrompt || userText,
-          task_type: "render_edit",
-          space_type: "interior",
-          style_intent: "Mevcut mekanı koruyarak istenen revizeleri uygula.",
-          preserve: ["Mekanın genel kurgusunu koru", "Kamera açısını bozma"],
-          changes: [],
-          constraints: [],
-          missing_questions: [],
-        };
-
-      const promptVariations: PromptVariation[] =
-        data?.variations ?? [
-          {
-            title: "Variation 1",
-            prompt: data?.interpretedPrompt || userText,
-          },
-        ];
-
+      const interpretedData: InterpretedResult = data.interpreted;
       setInterpreted(interpretedData);
-      setVariations(promptVariations);
 
       pushMessage({
         id: createId(),
         role: "assistant",
-        kind: "interpretation",
-        content: buildAssistantInterpretationText(interpretedData),
+        kind: data?.needsClarification ? "question" : "interpretation",
+        content:
+          data?.assistantReply ||
+          "İsteğini yorumladım. Belirtmediğin alanları koruyarak revizeyi oluşturmaya hazırım.",
       });
     } catch (error: any) {
       pushMessage({
@@ -186,50 +157,50 @@ export default function RenderPage() {
       }
 
       if (!interpreted) {
-        throw new Error("Önce isteği yorumlatmalısın.");
+        throw new Error("Önce revize isteğini yorumlatmalısın.");
       }
 
       setIsGenerating(true);
-      setResults([]);
+      setResult(null);
 
       pushMessage({
         id: createId(),
         role: "assistant",
         kind: "normal",
-        content: "Üretime geçiyorum. Üç farklı varyasyon hazırlanıyor...",
+        content: `İstediğin revizeyi oluşturmak için çalışıyorum. ${getEngineLabel(provider)}.`,
       });
 
       const formData = new FormData();
       formData.append("file", file);
       formData.append("interpreted", JSON.stringify(interpreted));
-      formData.append("provider", "openai");
+      formData.append("provider", provider);
 
       const res = await fetch("/api/render/generate", {
         method: "POST",
         body: formData,
       });
 
-      const raw = await res.text();
+      const data = await parseJsonSafely(res);
 
-      let data: any;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error(`JSON yerine şu döndü: ${raw.slice(0, 200)}`);
-      }
-
-      if (!res.ok || !data.success) {
+      if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Render üretimi başarısız oldu.");
       }
 
-      setVariations(data.prompts || []);
-      setResults(data.images || []);
+      const firstImage =
+        data?.image ||
+        (Array.isArray(data?.images) && data.images.length > 0 ? data.images[0] : null);
+
+      if (!firstImage) {
+        throw new Error("Üretim tamamlandı ama görsel dönmedi.");
+      }
+
+      setResult(firstImage);
 
       pushMessage({
         id: createId(),
         role: "assistant",
         kind: "success",
-        content: "Tamamlandı. Aşağıda üç varyasyonu inceleyebilirsin.",
+        content: `Revize hazır. ${getEngineLabel(provider)} sonucu üretildi.`,
       });
     } catch (error: any) {
       pushMessage({
@@ -289,8 +260,7 @@ export default function RenderPage() {
     setFile(null);
     setPreviewUrl("");
     setInterpreted(null);
-    setVariations([]);
-    setResults([]);
+    setResult(null);
     setIsDragging(false);
     setMessages([
       {
@@ -298,7 +268,7 @@ export default function RenderPage() {
         role: "assistant",
         kind: "normal",
         content:
-          "Yeni bir revize isteğiyle başlayabiliriz. Türkçe yaz, ben yorumlayayım.",
+          "Yeni bir revize isteğiyle başlayabiliriz. Türkçe yaz, ben yorumlayayım. Belirtmediğin ışık, kamera, kadraj ve genel mekan kurgusunu koruyarak ilerlerim.",
       },
     ]);
   }
@@ -325,8 +295,7 @@ export default function RenderPage() {
                 Konuşmalı Render Revize Sistemi
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65 md:text-[15px]">
-                Türkçe isteğini anlar, yapısal olarak yorumlar, İngilizce prompt
-                varyasyonları üretir ve görsel üzerinden üç farklı sonuç hazırlar.
+                Revize istediğin alanları yorumlar, gerekli yerde soru sorar ve yalnızca istenen bölgelere odaklanarak tek sonuç üretir.
               </p>
             </div>
 
@@ -345,10 +314,53 @@ export default function RenderPage() {
           <aside className="space-y-6">
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
               <div className="mb-4">
+                <p className="text-sm font-medium text-white">Motor seçimi</p>
+                <p className="mt-1 text-xs leading-5 text-white/45">
+                  İstersen çalışma akışını motor bazlı test edebilirsin.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <button
+                  onClick={() => setProvider("gemini")}
+                  className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                    provider === "gemini"
+                      ? "border-white bg-white text-black"
+                      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                  }`}
+                >
+                  Gemini
+                </button>
+
+                <button
+                  onClick={() => setProvider("chatgpt")}
+                  className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                    provider === "chatgpt"
+                      ? "border-white bg-white text-black"
+                      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                  }`}
+                >
+                  ChatGPT
+                </button>
+
+                <button
+                  onClick={() => setProvider("openai")}
+                  className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                    provider === "openai"
+                      ? "border-white bg-white text-black"
+                      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                  }`}
+                >
+                  OpenAI
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+              <div className="mb-4">
                 <p className="text-sm font-medium text-white">Görsel yükleme</p>
                 <p className="mt-1 text-xs leading-5 text-white/45">
-                  İstersen önce metni yaz, istersen görseli hemen bırak. Sistem iki
-                  akışta da çalışır.
+                  İstersen önce metni yaz, istersen görseli hemen bırak. Sistem iki akışta da çalışır.
                 </p>
               </div>
 
@@ -403,8 +415,7 @@ export default function RenderPage() {
               <div className="mb-4">
                 <p className="text-sm font-medium text-white">Revize isteği</p>
                 <p className="mt-1 text-xs leading-5 text-white/45">
-                  Örnek: ışıkları daha gerçekçi yap, dolapları sıcak krem tona çek,
-                  tavana spot ekle ama mekanı bozma.
+                  Örnek: yalnızca duş alanı duvarını bordo tona çek, zemini koyu seramik yap, diğer tüm alanları koru.
                 </p>
               </div>
 
@@ -436,7 +447,7 @@ export default function RenderPage() {
 
             {interpreted ? (
               <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <p className="mb-4 text-sm font-medium text-white">Yorumlanan yapı</p>
+                <p className="mb-4 text-sm font-medium text-white">Yorumlanan revize özeti</p>
 
                 <div className="space-y-5 text-sm text-white/70">
                   <div>
@@ -444,13 +455,6 @@ export default function RenderPage() {
                       Özet
                     </p>
                     <p className="leading-6">{interpreted.summary_tr}</p>
-                  </div>
-
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-[0.24em] text-white/35">
-                      Stil yönü
-                    </p>
-                    <p className="leading-6">{interpreted.style_intent}</p>
                   </div>
 
                   <div>
@@ -469,37 +473,9 @@ export default function RenderPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-[0.24em] text-white/35">
-                      Değişiklikler
-                    </p>
-                    <div className="space-y-3">
-                      {interpreted.changes.length > 0 ? (
-                        interpreted.changes.map((item, i) => (
-                          <div
-                            key={i}
-                            className="rounded-[22px] border border-white/10 bg-black/20 p-4"
-                          >
-                            <p className="text-white">
-                              <span className="text-white/40">target</span> / {item.target}
-                            </p>
-                            <p className="mt-1 text-white">
-                              <span className="text-white/40">action</span> / {item.action}
-                            </p>
-                            <p className="mt-1 text-white">
-                              <span className="text-white/40">value</span> / {item.value}
-                            </p>
-                          </div>
-                        ))
-                      ) : (
-                        <p>Genel iyileştirme isteği algılandı.</p>
-                      )}
-                    </div>
-                  </div>
-
                   {interpreted.missing_questions?.length > 0 ? (
                     <div className="rounded-[22px] border border-amber-400/30 bg-amber-400/10 p-4 text-amber-100">
-                      <p className="mb-2 text-sm font-medium">Netleşebilecek detaylar</p>
+                      <p className="mb-2 text-sm font-medium">Netleşmesi faydalı sorular</p>
                       <div className="space-y-1 text-sm">
                         {interpreted.missing_questions.map((item, i) => (
                           <p key={i}>- {item}</p>
@@ -539,6 +515,9 @@ export default function RenderPage() {
                           message.kind === "success"
                             ? "border-green-400/30 bg-green-500/10 text-green-100"
                             : "",
+                          message.kind === "question"
+                            ? "border-amber-400/30 bg-amber-500/10 text-amber-100"
+                            : "",
                         ].join(" ")}
                       >
                         {message.content}
@@ -555,7 +534,9 @@ export default function RenderPage() {
                         <span className="h-2 w-2 animate-pulse rounded-full bg-white/50 [animation-delay:120ms]" />
                         <span className="h-2 w-2 animate-pulse rounded-full bg-white/30 [animation-delay:240ms]" />
                         <span className="ml-1">
-                          {isInterpreting ? "AI düşünüyor..." : "Render hazırlanıyor..."}
+                          {isInterpreting
+                            ? "Revize talebin analiz ediliyor..."
+                            : `${getEngineLabel(provider)}.`}
                         </span>
                       </div>
                     </div>
@@ -564,65 +545,20 @@ export default function RenderPage() {
               </div>
             </section>
 
-            {variations.length > 0 ? (
+            {result ? (
               <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
                 <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm font-medium text-white">
-                    Oluşturulan İngilizce prompt varyasyonları
-                  </p>
-                  <p className="text-xs text-white/35">3 prompt</p>
+                  <p className="text-sm font-medium text-white">Üretilen sonuç</p>
+                  <p className="text-xs text-white/35">tek görsel</p>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-3">
-                  {variations.map((variation, i) => (
-                    <div
-                      key={i}
-                      className="rounded-[24px] border border-white/10 bg-black/20 p-4"
-                    >
-                      <p className="mb-3 text-sm font-semibold text-white">
-                        {variation.title}
-                      </p>
-                      <pre className="whitespace-pre-wrap text-xs leading-6 text-white/60">
-                        {variation.prompt}
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {results.length > 0 ? (
-              <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm font-medium text-white">Üretilen sonuçlar</p>
-                  <p className="text-xs text-white/35">3 varyasyon</p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-3">
-                  {results.map((src, i) => (
-                    <div
-                      key={i}
-                      className="group relative overflow-hidden rounded-[24px] border border-white/10 bg-black/20"
-                    >
-                      <img
-                        src={src}
-                        alt={`Render sonucu ${i + 1}`}
-                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-                        draggable={false}
-                      />
-
-                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-90" />
-
-                      <div className="absolute inset-x-0 bottom-0 p-4">
-                        <p className="text-sm font-medium text-white">
-                          {variations[i]?.title || `Varyasyon ${i + 1}`}
-                        </p>
-                        <p className="mt-1 text-xs text-white/55">
-                          tuDesign AI render revision
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-black/20">
+                  <img
+                    src={result}
+                    alt="Render sonucu"
+                    className="h-auto w-full object-cover"
+                    draggable={false}
+                  />
                 </div>
               </section>
             ) : null}
