@@ -60,7 +60,11 @@ export default function RenderPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const canInterpret = useMemo(() => input.trim().length > 0 && !isInterpreting, [input, isInterpreting]);
+  const canInterpret = useMemo(
+    () => input.trim().length > 0 && !isInterpreting,
+    [input, isInterpreting]
+  );
+
   const canGenerate = useMemo(
     () => !!file && !!interpreted && !isGenerating,
     [file, interpreted, isGenerating]
@@ -112,28 +116,56 @@ export default function RenderPage() {
     setIsInterpreting(true);
 
     try {
-      const res = await fetch("/api/render/interpret", {
+      const res = await fetch("/api/interpret", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: userText }),
+        body: JSON.stringify({ prompt: userText }),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
 
-      if (!res.ok || !data.success) {
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(`JSON yerine şu döndü: ${raw.slice(0, 200)}`);
+      }
+
+      if (!res.ok) {
         throw new Error(data?.error || "Yorumlama başarısız oldu.");
       }
 
-      setInterpreted(data.interpreted);
-      setVariations(data.variations || []);
+      const interpretedData: InterpretedResult =
+        data?.interpreted ??
+        {
+          summary_tr: data?.interpretedPrompt || userText,
+          task_type: "render_edit",
+          space_type: "interior",
+          style_intent: "Mevcut mekanı koruyarak istenen revizeleri uygula.",
+          preserve: ["Mekanın genel kurgusunu koru", "Kamera açısını bozma"],
+          changes: [],
+          constraints: [],
+          missing_questions: [],
+        };
+
+      const promptVariations: PromptVariation[] =
+        data?.variations ?? [
+          {
+            title: "Variation 1",
+            prompt: data?.interpretedPrompt || userText,
+          },
+        ];
+
+      setInterpreted(interpretedData);
+      setVariations(promptVariations);
 
       pushMessage({
         id: createId(),
         role: "assistant",
         kind: "interpretation",
-        content: buildAssistantInterpretationText(data.interpreted),
+        content: buildAssistantInterpretationText(interpretedData),
       });
     } catch (error: any) {
       pushMessage({
@@ -177,7 +209,14 @@ export default function RenderPage() {
         body: formData,
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(`JSON yerine şu döndü: ${raw.slice(0, 200)}`);
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data?.error || "Render üretimi başarısız oldu.");
@@ -266,9 +305,9 @@ export default function RenderPage() {
 
   return (
     <main
-  className="render-theme min-h-screen bg-[#09090b] text-white"
-  onContextMenu={(e) => e.preventDefault()}
-> 
+      className="render-theme min-h-screen bg-[#09090b] text-white"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-10%] h-[380px] w-[380px] rounded-full bg-white/5 blur-3xl" />
         <div className="absolute right-[-8%] top-[10%] h-[320px] w-[320px] rounded-full bg-violet-500/10 blur-3xl" />
@@ -380,7 +419,7 @@ export default function RenderPage() {
                 <button
                   onClick={handleInterpret}
                   disabled={!canInterpret}
-                  className="rounded-2xl border border-white/10 bg-white text-sm font-medium text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 px-4 py-3"
+                  className="rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-medium text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isInterpreting ? "Yorumlanıyor..." : "İsteği yorumla"}
                 </button>
