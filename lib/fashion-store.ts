@@ -262,3 +262,97 @@ export async function listFashionGenerationLogs(limit = 100) {
   const store = await readStore();
   return store.logs.slice(0, limit);
 }
+
+/* ------------------------------------------------------------------ */
+/* Compatibility layer for old fashion API routes */
+/* ------------------------------------------------------------------ */
+
+export async function findUserByCredentials(email: string, _password?: string) {
+  const user = await getFashionUserByEmail(email);
+
+  if (!user || !user.isActive) {
+    return null;
+  }
+
+  return user;
+}
+
+export function getPublicUser(user: FashionUser | null) {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    company: user.company,
+    role: user.role,
+    modules: user.modules,
+    credits: user.credits,
+    isActive: user.isActive,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    lastGeneratedAt: user.lastGeneratedAt,
+  };
+}
+
+export async function createFashionUser(
+  input: Partial<FashionUser> & {
+    email: string;
+    name?: string;
+  },
+) {
+  const existing = await getFashionUserByEmail(input.email);
+
+  if (existing) {
+    return null;
+  }
+
+  return upsertFashionUser(input);
+}
+
+export async function findUserByIdIncludingInactive(idOrEmail: string) {
+  const byId = await getFashionUserById(idOrEmail);
+  if (byId) return byId;
+
+  return getFashionUserByEmail(idOrEmail);
+}
+
+export async function getAllPublicUsers() {
+  const users = await listFashionUsers();
+  return users.map((user) => getPublicUser(user));
+}
+
+export async function updateFashionUser(
+  input: Partial<FashionUser> & {
+    email: string;
+    name?: string;
+  },
+) {
+  return upsertFashionUser(input);
+}
+
+export async function findUserById(idOrEmail: string) {
+  const byId = await getFashionUserById(idOrEmail);
+  if (byId && byId.isActive) return byId;
+
+  const byEmail = await getFashionUserByEmail(idOrEmail);
+  if (byEmail && byEmail.isActive) return byEmail;
+
+  return null;
+}
+
+export async function decrementCredit(idOrEmail: string, amount = 1) {
+  const user =
+    (await getFashionUserById(idOrEmail)) ??
+    (await getFashionUserByEmail(idOrEmail));
+
+  if (!user) {
+    return {
+      ok: false as const,
+      reason: "USER_NOT_FOUND" as const,
+      user: null,
+    };
+  }
+
+  return consumeFashionCredits(user.email, amount);
+}
