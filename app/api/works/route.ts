@@ -1,10 +1,10 @@
 import { randomUUID } from "crypto";
-import { getReferenceLogos, saveReferenceLogos } from "@/lib/reference-store";
-import type { ReferenceLogoItem } from "@/lib/reference-types";
+import { getWorks, saveWorks } from "@/lib/work-store";
+import type { WorkItem } from "@/lib/work-types";
 
 export async function GET() {
   try {
-    const items = await getReferenceLogos();
+    const items = await getWorks();
 
     return Response.json({
       success: true,
@@ -25,42 +25,36 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const name = String(body.name || "").trim();
-    const logo = String(body.logo || "").trim();
-    const url = String(body.url || "").trim();
+    const title = String(body.title || "").trim();
+    const subtitle = String(body.subtitle || "").trim();
+    const image = String(body.image || "").trim();
 
-    if (!name) {
+    if (!title) {
       return Response.json(
-        {
-          success: false,
-          error: "Firma adı gerekli.",
-        },
+        { success: false, error: "Başlık gerekli." },
         { status: 400 }
       );
     }
 
-    if (!logo) {
+    if (!image) {
       return Response.json(
-        {
-          success: false,
-          error: "Logo yolu gerekli.",
-        },
+        { success: false, error: "Görsel yolu gerekli." },
         { status: 400 }
       );
     }
 
-    const items = await getReferenceLogos();
+    const items = await getWorks();
 
-    const newItem: ReferenceLogoItem = {
+    const newItem: WorkItem = {
       id: randomUUID(),
-      name,
-      logo,
-      url,
+      title,
+      subtitle,
+      image,
       createdAt: new Date().toISOString(),
     };
 
     items.unshift(newItem);
-    await saveReferenceLogos(items);
+    await saveWorks(items);
 
     return Response.json({
       success: true,
@@ -84,22 +78,17 @@ export async function DELETE(req: Request) {
 
     if (!id) {
       return Response.json(
-        {
-          success: false,
-          error: "ID eksik.",
-        },
+        { success: false, error: "ID eksik." },
         { status: 400 }
       );
     }
 
-    const items = await getReferenceLogos();
+    const items = await getWorks();
     const filtered = items.filter((item) => item.id !== id);
 
-    await saveReferenceLogos(filtered);
+    await saveWorks(filtered);
 
-    return Response.json({
-      success: true,
-    });
+    return Response.json({ success: true });
   } catch (error: any) {
     return Response.json(
       {

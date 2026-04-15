@@ -1,18 +1,37 @@
 import { NextResponse } from "next/server";
+import { portalUsers } from "@/lib/portal-users";
 
 export async function POST(req: Request) {
-  const { password } = await req.json();
+  try {
+    const { username, password } = await req.json();
 
-  if (password === process.env.ADMIN_PASSWORD) {
-    const res = NextResponse.json({ success: true });
+    const user = portalUsers.find(
+      (item) => item.username === username && item.password === password
+    );
 
-    res.cookies.set("admin-auth", password, {
-      httpOnly: true,
-      path: "/",
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Hatalı kullanıcı adı veya şifre." },
+        { status: 401 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        username: user.username,
+        isAdmin: !!user.isAdmin,
+        canAccessRenderLab: !!user.canAccessRenderLab,
+        canAccessFashion: !!user.canAccessFashion,
+        canAccessReferences: !!user.canAccessReferences,
+        canAccessUploads: !!user.canAccessUploads,
+        canAccessWorks: !!user.canAccessWorks,
+      },
     });
-
-    return res;
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Login hatası." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }

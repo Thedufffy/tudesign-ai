@@ -21,20 +21,11 @@ export default function PortalReferencesPage() {
   const [error, setError] = useState("");
 
   async function loadItems() {
-    try {
-      const res = await fetch("/api/references", {
-        method: "GET",
-      });
+    const res = await fetch("/api/references");
+    const data = await res.json();
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data?.error || "Referanslar alınamadı.");
-      }
-
+    if (data.success) {
       setItems(data.items || []);
-    } catch (err: any) {
-      setError(err?.message || "Listeleme sırasında hata oluştu.");
     }
   }
 
@@ -73,20 +64,14 @@ export default function PortalReferencesPage() {
       setUploading(false);
       setSaving(true);
 
-      const normalizedUrl = url.trim()
-        ? url.trim().startsWith("http://") || url.trim().startsWith("https://")
-          ? url.trim()
-          : `https://${url.trim()}`
-        : "";
-
       const saveRes = await fetch("/api/references", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: name.trim(),
-          url: normalizedUrl,
+          name,
+          url,
           logo: uploadData.path,
         }),
       });
@@ -104,7 +89,6 @@ export default function PortalReferencesPage() {
       const input = document.getElementById(
         "reference-logo-input"
       ) as HTMLInputElement | null;
-
       if (input) input.value = "";
 
       await loadItems();
@@ -117,22 +101,14 @@ export default function PortalReferencesPage() {
   }
 
   async function handleDelete(id: string) {
-    try {
-      setError("");
+    const res = await fetch(`/api/references?id=${id}`, {
+      method: "DELETE",
+    });
 
-      const res = await fetch(`/api/references?id=${id}`, {
-        method: "DELETE",
-      });
+    const data = await res.json();
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data?.error || "Silme işlemi başarısız.");
-      }
-
+    if (data.success) {
       await loadItems();
-    } catch (err: any) {
-      setError(err?.message || "Silme sırasında hata oluştu.");
     }
   }
 
@@ -177,7 +153,7 @@ export default function PortalReferencesPage() {
                 <input
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="www.firmaadi.com"
+                  placeholder="https://firmaadi.com"
                   className="w-full rounded-[18px] border border-white/10 bg-black/20 p-3 text-sm text-white outline-none placeholder:text-white/25"
                 />
               </div>
@@ -191,7 +167,7 @@ export default function PortalReferencesPage() {
                   type="file"
                   accept="image/*"
                   onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm text-white/75 file:mr-4 file:border-0 file:bg-white file:px-4 file:py-2 file:text-sm file:font-medium file:text-black"
+                  className="block w-full text-sm text-white/75"
                 />
               </div>
 
@@ -223,69 +199,51 @@ export default function PortalReferencesPage() {
               <p className="text-xs text-white/35">{items.length} kayıt</p>
             </div>
 
-            {items.length === 0 ? (
-              <div className="rounded-[22px] border border-white/10 bg-black/20 p-6 text-sm text-white/45">
-                Henüz referans eklenmedi.
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-[22px] border border-white/10 bg-black/20 p-4"
-                  >
-                    <div className="flex h-[120px] items-center justify-center rounded-[18px] border border-white/10 bg-white p-4">
-                      <img
-                        src={item.logo}
-                        alt={item.name}
-                        className="max-h-full max-w-full object-contain"
-                        draggable={false}
-                      />
-                    </div>
-
-                    <p className="mt-4 text-base font-medium text-white">
-                      {item.name}
-                    </p>
-
-                    <p className="mt-2 break-all text-xs leading-5 text-white/45">
-                      {item.url || "Link girilmedi"}
-                    </p>
-
-                    <div className="mt-4 flex gap-2">
-                      {item.url ? (
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-[14px] border border-white/10 px-3 py-2 text-xs text-white/75 transition hover:bg-white/10 hover:text-white"
-                        >
-                          Siteyi aç
-                        </a>
-                      ) : null}
-
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="rounded-[14px] border border-red-400/20 px-3 py-2 text-xs text-red-200 transition hover:bg-red-500/10"
-                      >
-                        <div className="mt-20 text-center">
-  <p className="text-sm text-black/50">
-    Proje seçkilerimizi incelemek ister misiniz?
-  </p>
-
-  <a
-    href="/works"
-    className="mt-4 inline-block rounded-full bg-black px-6 py-3 text-sm text-white"
-  >
-    Works
-  </a>
-</div>
-                        Sil
-                      </button>
-                    </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {items.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-[22px] border border-white/10 bg-black/20 p-4"
+                >
+                  <div className="flex h-[120px] items-center justify-center rounded-[18px] border border-white/10 bg-white p-4">
+                    <img
+                      src={item.logo}
+                      alt={item.name}
+                      className="max-h-full max-w-full object-contain"
+                      draggable={false}
+                    />
                   </div>
-                ))}
-              </div>
-            )}
+
+                  <p className="mt-4 text-base font-medium text-white">
+                    {item.name}
+                  </p>
+
+                  <p className="mt-2 break-all text-xs leading-5 text-white/45">
+                    {item.url || "Link girilmedi"}
+                  </p>
+
+                  <div className="mt-4 flex gap-2">
+                    {item.url ? (
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-[14px] border border-white/10 px-3 py-2 text-xs text-white/75 transition hover:bg-white/10 hover:text-white"
+                      >
+                        Siteyi aç
+                      </a>
+                    ) : null}
+
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="rounded-[14px] border border-red-400/20 px-3 py-2 text-xs text-red-200 transition hover:bg-red-500/10"
+                    >
+                      Sil
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         </div>
       </div>

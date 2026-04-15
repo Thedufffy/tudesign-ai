@@ -1,0 +1,93 @@
+{
+  "users": [],
+  "logs": [
+    {
+      "id": "fashion_log_bb7eb39e-82d4-4429-aaa9-9efc728ab488",
+      "createdAt": "2026-04-13T22:14:35.373Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "luxury_studio_clean",
+      "locale": "tr",
+      "country": "Birleşik Arap Emirlikleri",
+      "prompt": "Yüklenen tüm ürünleri birlikte kullanarak temiz lüks stüdyo moda çekimi üret.\nYalnızca yüklenen ürünleri kullan.\nYüklenmeyen yeni kıyafet, çanta, ayakkabı, takı veya aksesuar ekleme.\nÜrün sadakati çok yüksek olmalı.\nHer ürünün rengi, formu, dikişi, materyali, oranı ve karakteri korunmalı.\nÜrünleri yeniden tasarlama, başka ürünle değiştirme, logoları veya detayları bozma.\nGörsel gerçek fotoğraf hissi vermeli, yapay illüstrasyon gibi görünmemeli.\nTam boy moda fotoğrafı üret.\nKafa tamamen kadraj içinde olsun.\nAyaklar tamamen kadraj içinde olsun.\nEller, çanta ve takı crop ile kesilmesin.\nKadraj biraz geniş olsun, modelin tüm silüeti rahatça sığsın.\nDoğal cilt, gerçek kumaş gerginliği, gerçek dikiş hissi ve ticari moda çekimi kalitesi istiyorum.\nElbise ana parça olarak kullanılmalı. Çakışan ekstra üst/alt giyim üretilmemeli. Ayakkabılar tam görünmeli. Çanta net görünmeli. Takı görünür olmalı.\nYüklenen ürün listesi:\n1. Üst Giyim: Modelin üzerinde ana üst parça olarak birebir görünmeli.\n2. Alt Giyim: Modelin üzerinde ana alt parça olarak birebir görünmeli.\n3. Elbise: Modelin üzerinde ana look olarak birebir görünmeli.\n4. Ayakkabı: Ayakta net görünmeli, crop ile kesilmemeli.\n5. Çanta: Elde veya omuzda net şekilde görünmeli ve birebir korunmalı.\n6. Takı: Takı görünür şekilde yer almalı ve birebir korunmalı.\nDosya isimleri:\ntopwear: C3CE226210CAM-997.webp\nbottomwear: pantolon.webp\ndress: duz-kadin-tisort-sari.jpg\nshoes: ayakkabııııı.webp\nbag: çanta.jpg\njewelry: bileklik.jpg\nÜlke / hedef pazar: Birleşik Arap Emirlikleri.\nSahne / senaryo: standing naturally in a premium editorial pose.\nKamera açısı: eye_level.\nStyling yönü: strong.\nIşık: soft_diffused.\nNo cropped head, no cropped feet, no missing bag, no missing jewelry, no altered pants, no altered top, no missing outerwear, no product mutation, no fake fabric, no plastic skin, no distorted anatomy."
+    },
+    {
+      "id": "fashion_log_e00b071b-4c41-4c9e-9c35-a551ec83f768",
+      "createdAt": "2026-04-13T21:38:17.174Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "motion_campaign",
+      "locale": "tr",
+      "country": "Birleşik Arap Emirlikleri",
+      "prompt": "Yüklenen tüm ürünleri birlikte kullanarak hareket hissi olan kampanya moda çekimi üret.\nYalnızca yüklenen ürünleri kullan.\nYüklenmeyen yeni kıyafet, çanta, ayakkabı, takı veya aksesuar ekleme.\nÜrün sadakati çok yüksek olmalı.\nHer ürünün rengi, formu, dikişi, materyali, baskısı, oranı ve karakteri korunmalı.\nÜrünleri yeniden tasarlama, başka ürünle değiştirme, logoları bozma, desenleri değiştirme.\nModel üzerinde görünmesi gereken giyim ürünleri birebir korunmalı.\nYüklenen tüm parçalar tek look içinde mantıklı şekilde birlikte yer almalı.\nElbise yüklüyse, elbiseyi ana look olarak kullan. Üst giyim/alt giyim varsa elbiseyle çakışan ek kıyafet üretme.\nAyakkabı görünür olmalı, crop nedeniyle kesilmemeli.\nÇanta net şekilde görünmeli ve yüklenen çantayla birebir aynı olmalı.\nTakı görünür şekilde yer almalı ve yüklenen takıyla birebir aynı olmalı.\nYüklenen ürün listesi:\n1. alt giyim: Modelin üzerinde birebir görünmeli.\n2. elbise: Modelin üzerinde ana parça olarak birebir görünmeli.\n3. ayakkabı: Ayakta net görünmeli, crop ile kaybolmamalı.\n4. çanta: Elde, omuzda veya kompozisyonda net şekilde görünmeli.\n5. takı: Bileklik/kolye/küpe/yüzük formuna göre görünür şekilde yer almalı.\nÜlke / hedef pazar: Birleşik Arap Emirlikleri.\nSahne / senaryo: burj khalifa önünde caddede yürürken bir poz.\nKamera açısı: eye_level.\nStyling yönü: balanced.\nIşık: directional_editorial.\nSonuç fotogerçekçi, premium, temiz ve ticari kullanım kalitesinde olsun.\nÜrünler karışmasın, yer değiştirmesin, eksilmesin.\nTakıyı başka kolye/bileklikle, çantayı başka çantayla, kıyafetleri başka kıyafetlerle değiştirme.\nNo wrong outfit, no missing garment, no missing bag, no missing jewelry, no wrong shoes, no product mutation, no cropped product."
+    },
+    {
+      "id": "fashion_log_da383ef7-a2e0-41d7-867e-daa3781a9c84",
+      "createdAt": "2026-04-13T20:56:52.335Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "luxury_studio_clean",
+      "locale": "tr",
+      "country": "Türkiye",
+      "prompt": "Yüklenen ürün(ler)i kullanarak premium moda çekimi üret.\nÜrün sadakati çok yüksek olmalı.\nÜrünün renkleri, formu, dikiş detayları, materyali, desenleri, baskıları ve aksesuarları korunmalı.\nYeni ürün tasarlama, ürünü değiştirme, siluet bozma, ürün parçalarını eksiltme yapma.\nModel fotoğraf çekimi hissi ver.\nSonuç fotogerçekçi, premium ve ticari kullanım kalitesinde olsun.\nÜlke / hedef pazar: Türkiye.\nIşık: soft_diffused.\nHatalı el/parmak, bozuk anatomi, ekstra uzuv, düşük çözünürlük, bulanıklık, deforme yüz, ürünün değişmesi, yanlış renk, yanlış kumaş, yanlış logo, yazı hatası, watermark, çerçeve, kolaj, kırpılmış ayak veya kırpılmış ürün istemiyorum."
+    },
+    {
+      "id": "fashion_log_9a0752f7-e026-4a4c-9c8f-08cffba0aeed",
+      "createdAt": "2026-04-13T20:52:22.711Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "premium_ecommerce",
+      "locale": "tr",
+      "country": "İngiltere",
+      "prompt": "Yüklenen ürün(ler)i kullanarak premium moda çekimi üret.\nÜrün sadakati çok yüksek olmalı.\nÜrünün renkleri, formu, dikiş detayları, materyali, desenleri, baskıları ve aksesuarları korunmalı.\nYeni ürün tasarlama, ürünü değiştirme, siluet bozma, ürün parçalarını eksiltme yapma.\nModel fotoğraf çekimi hissi ver.\nSonuç fotogerçekçi, premium ve ticari kullanım kalitesinde olsun.\nÜlke / hedef pazar: İngiltere.\nIşık: soft_diffused.\nHatalı el/parmak, bozuk anatomi, ekstra uzuv, düşük çözünürlük, bulanıklık, deforme yüz, ürünün değişmesi, yanlış renk, yanlış kumaş, yanlış logo, yazı hatası, watermark, çerçeve, kolaj, kırpılmış ayak veya kırpılmış ürün istemiyorum."
+    },
+    {
+      "id": "fashion_log_27ce0e04-26fc-4c24-a63b-62e4ada1ad31",
+      "createdAt": "2026-04-13T20:50:39.335Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "premium_ecommerce",
+      "locale": "tr",
+      "country": "İngiltere",
+      "prompt": "Yüklenen ürün(ler)i kullanarak premium moda çekimi üret.\nÜrün sadakati çok yüksek olmalı.\nÜrünün renkleri, formu, dikiş detayları, materyali, desenleri, baskıları ve aksesuarları korunmalı.\nYeni ürün tasarlama, ürünü değiştirme, siluet bozma, ürün parçalarını eksiltme yapma.\nModel fotoğraf çekimi hissi ver.\nSonuç fotogerçekçi, premium ve ticari kullanım kalitesinde olsun.\nÜlke / hedef pazar: İngiltere.\nIşık: directional_editorial.\nHatalı el/parmak, bozuk anatomi, ekstra uzuv, düşük çözünürlük, bulanıklık, deforme yüz, ürünün değişmesi, yanlış renk, yanlış kumaş, yanlış logo, yazı hatası, watermark, çerçeve, kolaj, kırpılmış ayak veya kırpılmış ürün istemiyorum."
+    },
+    {
+      "id": "fashion_log_4f2b83e1-692a-4321-b16a-1a0b68f8f862",
+      "createdAt": "2026-04-13T20:47:44.404Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "luxury_studio_clean",
+      "locale": "tr",
+      "country": "İngiltere",
+      "prompt": "Yüklenen ürün(ler)i kullanarak premium moda çekimi üret.\nÜrün sadakati çok yüksek olmalı.\nÜrünün renkleri, formu, dikiş detayları, materyali, desenleri, baskıları ve aksesuarları korunmalı.\nYeni ürün tasarlama, ürünü değiştirme, siluet bozma, ürün parçalarını eksiltme yapma.\nModel fotoğraf çekimi hissi ver.\nSonuç fotogerçekçi, premium ve ticari kullanım kalitesinde olsun.\nÜlke / hedef pazar: İngiltere.\nIşık: soft_diffused.\nHatalı el/parmak, bozuk anatomi, ekstra uzuv, düşük çözünürlük, bulanıklık, deforme yüz, ürünün değişmesi, yanlış renk, yanlış kumaş, yanlış logo, yazı hatası, watermark, çerçeve, kolaj, kırpılmış ayak veya kırpılmış ürün istemiyorum."
+    },
+    {
+      "id": "fashion_log_67fd2ef9-7036-44df-9209-24df8411ed58",
+      "createdAt": "2026-04-13T20:38:58.987Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "luxury_studio_clean",
+      "locale": "tr",
+      "country": "İngiltere",
+      "prompt": "Yüklenen ürün(ler)i kullanarak premium moda çekimi üret.\nÜrün sadakati çok yüksek olmalı.\nÜrünün renkleri, formu, dikiş detayları, materyali, desenleri, baskıları ve aksesuarları korunmalı.\nYeni ürün tasarlama, ürünü değiştirme, siluet bozma, ürün parçalarını eksiltme yapma.\nModel fotoğraf çekimi hissi ver.\nSonuç fotogerçekçi, premium ve ticari kullanım kalitesinde olsun.\nÜlke / hedef pazar: İngiltere.\nIşık: soft_diffused.\nHatalı el/parmak, bozuk anatomi, ekstra uzuv, düşük çözünürlük, bulanıklık, deforme yüz, ürünün değişmesi, yanlış renk, yanlış kumaş, yanlış logo, yazı hatası, watermark, çerçeve, kolaj, kırpılmış ayak veya kırpılmış ürün istemiyorum."
+    },
+    {
+      "id": "fashion_log_56e23b12-d235-4e22-9206-547619160029",
+      "createdAt": "2026-04-13T20:36:14.917Z",
+      "userEmail": "admin@tudesign.tr",
+      "creditsUsed": 0,
+      "resultCount": 2,
+      "preset": "luxury_studio_clean",
+      "locale": "tr",
+      "country": "İngiltere",
+      "prompt": "Yüklenen ürün(ler)i kullanarak premium moda çekimi üret.\nÜrün sadakati çok yüksek olmalı.\nÜrünün renkleri, formu, dikiş detayları, materyali, desenleri, baskıları ve aksesuarları korunmalı.\nYeni ürün tasarlama, ürünü değiştirme, siluet bozma, ürün parçalarını eksiltme yapma.\nModel fotoğraf çekimi hissi ver.\nSonuç fotogerçekçi, premium ve ticari kullanım kalitesinde olsun.\nÜlke / hedef pazar: İngiltere.\nIşık: soft_diffused.\nHatalı el/parmak, bozuk anatomi, ekstra uzuv, düşük çözünürlük, bulanıklık, deforme yüz, ürünün değişmesi, yanlış renk, yanlış kumaş, yanlış logo, yazı hatası, watermark, çerçeve, kolaj, kırpılmış ayak veya kırpılmış ürün istemiyorum."
+    }
+  ]
+}

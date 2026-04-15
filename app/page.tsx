@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReferenceLogoGrid from "@/components/reference-logo-grid";
 
 type ImageResult = string[];
 type ModeOption = "retouch" | "redesign";
@@ -61,14 +62,24 @@ export default function HomePage() {
 
         const data = await res.json();
 
-        if (!Array.isArray(data)) return;
+        // Eski proje referans sistemi array dönüyorsa çalışsın
+        if (Array.isArray(data)) {
+          const featuredOnly = data.filter(
+            (item: ReferenceItem) => item.featured
+          );
 
-        const featuredOnly = data.filter(
-          (item: ReferenceItem) => item.featured
-        );
+          if (isMounted) {
+            setFeaturedReferences(featuredOnly);
+          }
 
-        if (isMounted) {
-          setFeaturedReferences(featuredOnly);
+          return;
+        }
+
+        // Yeni logo API shape'i gelirse bu bölümü bozmayalım
+        if (data && Array.isArray(data.items)) {
+          if (isMounted) {
+            setFeaturedReferences([]);
+          }
         }
       } catch (err) {
         console.error("References fetch error:", err);
@@ -573,6 +584,8 @@ bu tasarımın profesyonel olarak uygulanması veya geliştirilmesi için bilgi 
             </div>
           )}
         </section>
+
+        <ReferenceLogoGrid />
 
         <section
           id="studio"

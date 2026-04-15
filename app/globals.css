@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+* {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
@@ -21,7 +25,12 @@ textarea {
   font: inherit;
 }
 
-/* Sadece radius'ları sıfırla */
+img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* SADECE BU KALSIN */
 [class*="rounded"] {
   border-radius: 0 !important;
 }
