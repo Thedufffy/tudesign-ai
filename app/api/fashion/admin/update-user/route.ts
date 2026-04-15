@@ -11,51 +11,89 @@ export async function POST(req: Request) {
     const sessionUserId = await getFashionSessionUserId();
 
     if (!sessionUserId) {
-      return NextResponse.json({ error: "Oturum bulunamadı." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Oturum bulunamadı." },
+        { status: 401 }
+      );
     }
 
-    const currentUser = findUserByIdIncludingInactive(sessionUserId);
+    const currentUser = await findUserByIdIncludingInactive(sessionUserId);
 
     if (!currentUser || currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Yetkisiz işlem." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Yetkisiz işlem." },
+        { status: 403 }
+      );
     }
 
     const body = await req.json();
 
-    const id = String(body.id || "").trim();
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    const email =
+      typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
 
-    if (!id) {
+    if (!id && !email) {
       return NextResponse.json(
-        { error: "Kullanıcı id zorunludur." },
+        { error: "Kullanıcı güncellemek için id veya email gerekli." },
         { status: 400 }
       );
     }
 
-    const updated = updateFashionUser({
-      id,
-      companyName:
-        typeof body.companyName === "string" ? body.companyName.trim() : undefined,
-      username:
-        typeof body.username === "string" ? body.username.trim() : undefined,
-      password:
-        typeof body.password === "string" ? body.password.trim() : undefined,
-      credits:
-        typeof body.credits === "number" ? body.credits : undefined,
-      isActive:
-        typeof body.isActive === "boolean" ? body.isActive : undefined,
-      role: body.role === "admin" || body.role === "client" ? body.role : undefined,
-    });
+    const targetUser = id
+      ? await findUserByIdIncludingInactive(id)
+      : await findUserByIdIncludingInactive(email);
 
-    if (!updated.ok) {
-      return NextResponse.json({ error: updated.message }, { status: 400 });
+    if (!targetUser) {
+      return NextResponse.json(
+        { error: "Kullanıcı bulunamadı." },
+        { status: 404 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      user: updated.user,
-      users: getAllPublicUsers(),
+    const credits =
+      typeof body?.credits === "number"
+        ? body.credits
+        : typeof body?.credits === "string" && body.credits.trim() !== ""
+        ? Number(body.credits)
+        : undefined;
+
+    const updated = await updateFashionUser({
+      email: targetUser.email,
+      name:
+        typeof body?.username === "string"
+          ? body.username.trim()
+          : typeof body?.name === "string"
+          ? body.name.trim()
+          : undefined,
+      company:
+        typeof body?.companyName === "string"
+          ? body.companyName.trim()
+          : typeof body?.company === "string"
+          ? body.company.trim()
+          : undefined,
+      credits:
+        typeof credits === "number" && Number.isFinite(credits)
+          ? Math.max(0, Math.floor(credits))
+          : undefined,
+      isActive:
+        typeof body?.isActive === "boolean" ? body.isActive : undefined,
+      role:
+        body?.role === "admin" || body?.role === "client"
+          ? body.role
+          : undefined,
+      modules: Array.isArray(body?.modules) ? body.modules : undefined,
     });
-  } catch {
+
+    const users = await getAllPublicUsers();
+
+    return NextResponse.json({
+      ok: true,
+      user: updated,
+      users,
+    });
+  } catch (error) {
+    console.error("fashion admin update-user error:", error);
+
     return NextResponse.json(
       { error: "Kullanıcı güncellenemedi." },
       { status: 500 }

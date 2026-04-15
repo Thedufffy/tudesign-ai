@@ -10,21 +10,32 @@ export async function GET() {
     const sessionUserId = await getFashionSessionUserId();
 
     if (!sessionUserId) {
-      return NextResponse.json({ error: "Oturum bulunamadı." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Oturum bulunamadı." },
+        { status: 401 }
+      );
     }
 
-    const currentUser = findUserByIdIncludingInactive(sessionUserId);
+    const currentUser = await findUserByIdIncludingInactive(sessionUserId);
 
     if (!currentUser || currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Yetkisiz işlem." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Yetkisiz işlem." },
+        { status: 403 }
+      );
     }
 
+    const users = await getAllPublicUsers();
+
     return NextResponse.json({
-      users: getAllPublicUsers(),
+      ok: true,
+      users,
     });
-  } catch {
+  } catch (error) {
+    console.error("fashion admin list-users error:", error);
+
     return NextResponse.json(
-      { error: "Kullanıcı listesi alınamadı." },
+      { error: "Kullanıcılar alınamadı." },
       { status: 500 }
     );
   }

@@ -11,54 +11,72 @@ export async function POST(req: Request) {
     const sessionUserId = await getFashionSessionUserId();
 
     if (!sessionUserId) {
-      return NextResponse.json({ error: "Oturum bulunamadı." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Oturum bulunamadı." },
+        { status: 401 }
+      );
     }
 
-    const currentUser = findUserByIdIncludingInactive(sessionUserId);
+    const currentUser = await findUserByIdIncludingInactive(sessionUserId);
 
     if (!currentUser || currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Yetkisiz işlem." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Yetkisiz işlem." },
+        { status: 403 }
+      );
     }
 
     const body = await req.json();
 
-    const companyName = String(body.companyName || "").trim();
-    const username = String(body.username || "").trim();
-    const password = String(body.password || "").trim();
-    const credits = Number(body.credits || 0);
+    const email =
+      typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    const name =
+      typeof body?.name === "string" ? body.name.trim() : "";
+    const company =
+      typeof body?.company === "string" ? body.company.trim() : "";
+    const credits =
+      typeof body?.credits === "number"
+        ? body.credits
+        : typeof body?.credits === "string" && body.credits.trim() !== ""
+        ? Number(body.credits)
+        : 0;
+    const isActive =
+      typeof body?.isActive === "boolean" ? body.isActive : true;
 
-    if (!companyName || !username || !password) {
+    if (!email) {
       return NextResponse.json(
-        { error: "Firma adı, kullanıcı adı ve şifre zorunludur." },
+        { error: "E-posta zorunlu." },
         { status: 400 }
       );
     }
 
-    if (Number.isNaN(credits) || credits < 0) {
-      return NextResponse.json(
-        { error: "Kredi değeri geçersiz." },
-        { status: 400 }
-      );
-    }
-
-    const created = createFashionUser({
-      companyName,
-      username,
-      password,
-      credits,
+    const created = await createFashionUser({
+      email,
+      name: name || email.split("@")[0],
+      company,
+      credits: Number.isFinite(credits) ? Math.max(0, Math.floor(credits)) : 0,
+      isActive,
       role: "client",
+      modules: ["fashion"],
     });
 
-    if (!created.ok) {
-      return NextResponse.json({ error: created.message }, { status: 400 });
+    if (!created) {
+      return NextResponse.json(
+        { error: "Bu e-posta ile kayıtlı kullanıcı zaten var." },
+        { status: 409 }
+      );
     }
+
+    const users = await getAllPublicUsers();
 
     return NextResponse.json({
-      success: true,
-      user: created.user,
-      users: getAllPublicUsers(),
+      ok: true,
+      user: created,
+      users,
     });
-  } catch {
+  } catch (error) {
+    console.error("fashion admin create-user error:", error);
+
     return NextResponse.json(
       { error: "Kullanıcı oluşturulamadı." },
       { status: 500 }

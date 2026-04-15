@@ -1,47 +1,45 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getFashionSessionUserId } from "@/lib/fashion-auth";
-import { decrementCredit, findUserById } from "@/lib/fashion-store";
+import {
+  decrementCredit,
+  findUserById,
+  addFashionGenerationLog,
+} from "@/lib/fashion-store";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-function buildPrompt(country: string, userPrompt: string) {
-  return `
-Create a realistic fashion model wearing the provided clothing.
-
-IMPORTANT:
-- Keep the clothing EXACTLY the same
-- Do not change color, shape, or design
-- Preserve all garment details
-
-Model:
-- Natural human pose
-- Fashion photography style
-
-Scene:
-- ${country}
-- ${userPrompt}
-- realistic environment
-- cinematic natural lighting
-
-Output:
-- ultra realistic
-- premium fashion photography
-`;
-}
-
-function isValidImageFile(file: File) {
-  return (
-    file.type === "image/png" ||
-    file.type === "image/jpeg" ||
-    file.type === "image/webp"
-  );
-}
-
 export async function POST(req: Request) {
   try {
+    const formData = await req.formData();
+
+    const image = formData.get("image");
+    const prompt =
+      typeof formData.get("prompt") === "string"
+        ? String(formData.get("prompt"))
+        : "";
+    const locale =
+      typeof formData.get("locale") === "string"
+        ? String(formData.get("locale"))
+        : undefined;
+    const country =
+      typeof formData.get("country") === "string"
+        ? String(formData.get("country"))
+        : undefined;
+    const preset =
+      typeof formData.get("preset") === "string"
+        ? String(formData.get("preset"))
+        : undefined;
+
+    if (!(image instanceof File)) {
+      return NextResponse.json(
+        { error: "Görsel bulunamadı." },
+        { status: 400 }
+      );
+    }
+
     const userId = await getFashionSessionUserId();
 
     if (!userId) {
@@ -51,7 +49,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const user = findUserById(userId);
+    const user = await findUserById(userId);
 
     if (!user) {
       return NextResponse.json(
@@ -60,24 +58,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const formData = await req.formData();
-
-    const file = formData.get("file");
-    const country = String(formData.get("country") || "").trim();
-    const promptText = String(formData.get("prompt") || "").trim();
-
-    if (!(file instanceof File) || !country || !promptText) {
-      return NextResponse.json({ error: "Eksik veri." }, { status: 400 });
-    }
-
-    if (!isValidImageFile(file)) {
-      return NextResponse.json(
-        { error: "Sadece PNG, JPG veya WEBP yükleyebilirsiniz." },
-        { status: 400 }
-      );
-    }
-
-    const creditResult = decrementCredit(userId, 1);
+    const creditResult = await decrementCredit(userId, 1);
 
     if (!creditResult.ok) {
       return NextResponse.json(
@@ -86,50 +67,45 @@ export async function POST(req: Request) {
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    const imageFile = new File(
-      [new Uint8Array(buffer)],
-      file.name || "upload.png",
-      {
-        type: file.type || "image/png",
-      }
-    );
-
-    const prompt = buildPrompt(country, promptText);
+    const arrayBuffer = await image.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
     const result = await openai.images.edit({
       model: "gpt-image-1",
-      image: imageFile,
-      prompt,
-      n: 3,
+      image: new File([buffer], image.name || "fashion-input.png", {
+        type: image.type || "image/png",
+      }),
+      prompt:
+        prompt ||
+        "Create a photorealistic fashion image. Preserve the uploaded product faithfully. Keep colors, form, material, and product details accurate.",
       size: "1024x1024",
     });
 
     const images =
-      result.data?.flatMap((img) =>
-        img.b64_json ? [`data:image/png;base64,${img.b64_json}`] : []
-      ) || [];
+      result.data?.map((item) => item.b64_json).filter(Boolean) ?? [];
 
-    if (images.length === 0) {
-      return NextResponse.json(
-        { error: "AI görsel üretti ama çıktı alınamadı." },
-        { status: 500 }
-      );
-    }
+    await addFashionGenerationLog({
+      userEmail: user.email,
+      creditsUsed: 1,
+      resultCount: images.length,
+      preset,
+      locale,
+      country,
+      prompt:
+        prompt ||
+        "Create a photorealistic fashion image. Preserve the uploaded product faithfully. Keep colors, form, material, and product details accurate.",
+    });
 
     return NextResponse.json({
       success: true,
       images,
-      remainingCredits: creditResult.credits,
+      creditsLeft: creditResult.user?.credits ?? user.credits - 1,
     });
-  } catch (error: any) {
-    console.error("Generate route error full:", error);
-    console.error("Generate route error message:", error?.message);
-    console.error("Generate route error response:", error?.response?.data);
+  } catch (error) {
+    console.error("generate route error:", error);
 
     return NextResponse.json(
-      { error: error?.message || "AI üretim hatası." },
+      { error: "Görsel üretimi başarısız oldu." },
       { status: 500 }
     );
   }

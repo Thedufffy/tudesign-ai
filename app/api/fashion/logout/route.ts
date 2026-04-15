@@ -8,9 +8,11 @@ export async function POST() {
     return NextResponse.json({
       success: true,
     });
-  } catch {
+  } catch (error) {
+    console.error("fashion logout error:", error);
+
     return NextResponse.json(
-      { error: "Çıkış yapılırken hata oluştu." },
+      { error: "Çıkış işlemi başarısız oldu." },
       { status: 500 }
     );
   }

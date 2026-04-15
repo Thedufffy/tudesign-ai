@@ -1,42 +1,53 @@
 import { NextResponse } from "next/server";
 import { findUserByCredentials, getPublicUser } from "@/lib/fashion-store";
-import { clearFashionSession, setFashionSession } from "@/lib/fashion-auth";
+import {
+  clearFashionSession,
+  setFashionSession,
+} from "@/lib/fashion-auth";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const username = String(body.username || "").trim();
-    const password = String(body.password || "").trim();
 
-    if (!username || !password) {
+    const email =
+      typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password =
+      typeof body?.password === "string" ? body.password.trim() : "";
+
+    if (!email) {
+      await clearFashionSession();
       return NextResponse.json(
-        { error: "Kullanıcı adı ve şifre zorunludur." },
+        { error: "E-posta gerekli." },
         { status: 400 }
       );
     }
 
-    const user = findUserByCredentials(username, password);
+    const user = await findUserByCredentials(email, password);
 
     if (!user) {
       await clearFashionSession();
-
       return NextResponse.json(
-        { error: "Kullanıcı adı veya şifre hatalı." },
+        { error: "Geçersiz kullanıcı bilgileri." },
         { status: 401 }
       );
     }
 
-    await setFashionSession(user.id);
+    await setFashionSession({
+      email: user.email,
+      role: user.role,
+      modules: user.modules,
+    });
 
     return NextResponse.json({
       success: true,
       user: getPublicUser(user),
     });
   } catch (error) {
-    console.error("Fashion login error:", error);
+    console.error("fashion login error:", error);
+    await clearFashionSession();
 
     return NextResponse.json(
-      { error: "Giriş yapılırken sunucu hatası oluştu." },
+      { error: "Giriş işlemi başarısız oldu." },
       { status: 500 }
     );
   }
