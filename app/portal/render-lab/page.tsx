@@ -30,6 +30,23 @@ function createId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function formatEngineLabel(engine?: string | null) {
+  if (!engine) return "Auto Engine aktif";
+
+  if (engine === "openai-edit") return "Auto Engine / Vision Edit";
+  if (engine === "gemini") return "Auto Engine / Gemini Vision";
+  if (engine === "openai-generate") return "Auto Engine / Image Generation";
+
+  if (engine === "gemini-engine") return "Auto Engine / Gemini Vision";
+  if (engine === "openai-engine") return "Auto Engine / Vision Edit";
+  if (engine === "chatgpt-engine") return "Auto Engine / Vision Edit";
+
+  return "Auto Engine aktif";
+}
+
+const FALLBACK_MESSAGE =
+  "İlk üretim denemesi tamamlanamadı. Alternatif render motoru ile devam ediliyor...";
+
 export default function RenderPage() {
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -42,6 +59,13 @@ export default function RenderPage() {
   const [isInterpreting, setIsInterpreting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const [usedEngine, setUsedEngine] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState("");
+  const [fallbackMessageVisible, setFallbackMessageVisible] = useState(false);
+
+  const [shareLoading, setShareLoading] = useState(false);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: createId(),
@@ -53,6 +77,8 @@ export default function RenderPage() {
   ]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const stepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canInterpret = useMemo(
     () => input.trim().length > 0 && !isInterpreting,
@@ -67,11 +93,61 @@ export default function RenderPage() {
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
+
+      if (stepIntervalRef.current) {
+        clearInterval(stepIntervalRef.current);
+      }
+
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+      }
     };
   }, [previewUrl]);
 
   function pushMessage(message: ChatMessage) {
     setMessages((prev) => [...prev, message]);
+  }
+
+  function clearLoadingTimers() {
+    if (stepIntervalRef.current) {
+      clearInterval(stepIntervalRef.current);
+      stepIntervalRef.current = null;
+    }
+
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }
+
+  function startGenerateStatusFlow() {
+    const steps = [
+      "Render analiz ediliyor...",
+      "Geometri ve açı eşleştiriliyor...",
+      "Auto Engine devreye alınıyor...",
+      "Revize komutları uygulanıyor...",
+      "Final görseller hazırlanıyor...",
+    ];
+
+    let stepIndex = 0;
+    setStatusText(steps[0]);
+
+    stepIntervalRef.current = setInterval(() => {
+      stepIndex = Math.min(stepIndex + 1, steps.length - 1);
+      setStatusText(steps[stepIndex]);
+    }, 1800);
+
+    fallbackTimerRef.current = setTimeout(() => {
+      setFallbackMessageVisible(true);
+      setStatusText(FALLBACK_MESSAGE);
+
+      pushMessage({
+        id: createId(),
+        role: "assistant",
+        kind: "normal",
+        content: FALLBACK_MESSAGE,
+      });
+    }, 9000);
   }
 
   async function parseJsonSafely(res: Response) {
@@ -83,6 +159,65 @@ export default function RenderPage() {
       throw new Error(
         raw ? `JSON yerine şu döndü: ${raw.slice(0, 200)}` : "Sunucudan boş yanıt döndü."
       );
+    }
+  }
+
+  async function dataUrlToFile(dataUrl: string, filename: string) {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+
+    return new File([blob], filename, {
+      type: blob.type || "image/png",
+    });
+  }
+
+  async function handleDownload() {
+    try {
+      if (!result) return;
+
+      setDownloadLoading(true);
+
+      const link = document.createElement("a");
+      link.href = result;
+      link.download = `tudesign-render-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setDownloadLoading(false);
+    }
+  }
+
+  async function handleShare() {
+    try {
+      if (!result) return;
+
+      setShareLoading(true);
+
+      const fileToShare = await dataUrlToFile(
+        result,
+        `tudesign-render-${Date.now()}.png`
+      );
+
+      if (navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
+        await navigator.share({
+          title: "tuDesign AI Render",
+          text: "tuDesign AI ile oluşturulan render çıktısı",
+          files: [fileToShare],
+        });
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.href = result;
+      link.download = fileToShare.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Paylaşım hatası:", error);
+    } finally {
+      setShareLoading(false);
     }
   }
 
@@ -99,6 +234,9 @@ export default function RenderPage() {
 
     setInput("");
     setResult(null);
+    setUsedEngine(null);
+    setStatusText("");
+    setFallbackMessageVisible(false);
     setIsInterpreting(true);
 
     try {
@@ -154,6 +292,11 @@ export default function RenderPage() {
 
       setIsGenerating(true);
       setResult(null);
+      setUsedEngine(null);
+      setFallbackMessageVisible(false);
+
+      clearLoadingTimers();
+      startGenerateStatusFlow();
 
       pushMessage({
         id: createId(),
@@ -165,6 +308,7 @@ export default function RenderPage() {
 
       const formData = new FormData();
       formData.append("image", file);
+      formData.append("note", interpreted.summary_tr);
       formData.append("prompt", interpreted.summary_tr);
       formData.append("mode", "auto");
 
@@ -175,15 +319,44 @@ export default function RenderPage() {
 
       const data = await parseJsonSafely(res);
 
+      clearLoadingTimers();
+
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Render üretimi başarısız oldu.");
       }
 
-      if (!data?.image) {
+      let finalImage: string | null = null;
+
+      if (typeof data?.image === "string" && data.image.length > 0) {
+        finalImage = data.image.startsWith("data:image")
+          ? data.image
+          : `data:image/png;base64,${data.image}`;
+      } else if (Array.isArray(data?.images) && data.images.length > 0) {
+        const firstImage = data.images[0];
+        if (typeof firstImage === "string" && firstImage.length > 0) {
+          finalImage = firstImage.startsWith("data:image")
+            ? firstImage
+            : `data:image/png;base64,${firstImage}`;
+        }
+      }
+
+      if (!finalImage) {
         throw new Error("Üretim tamamlandı ama görsel dönmedi.");
       }
 
-      setResult(`data:image/png;base64,${data.image}`);
+      setResult(finalImage);
+      setUsedEngine(data?.engine || data?.engineName || null);
+
+      if (data?.fallbackUsed) {
+        setFallbackMessageVisible(true);
+        setStatusText(FALLBACK_MESSAGE);
+
+        setTimeout(() => {
+          setStatusText("Render revizesi tamamlandı.");
+        }, 1400);
+      } else {
+        setStatusText("Render revizesi tamamlandı.");
+      }
 
       pushMessage({
         id: createId(),
@@ -191,9 +364,14 @@ export default function RenderPage() {
         kind: "success",
         content: data?.engineName
           ? `Revize hazır. ${data.engineName}.`
-          : "Revize hazır.",
+          : data?.engine
+          ? `Revize hazır. ${formatEngineLabel(data.engine)}.`
+          : "Revize hazır. Auto Engine işlemi tamamladı.",
       });
     } catch (error: any) {
+      clearLoadingTimers();
+      setStatusText("");
+
       pushMessage({
         id: createId(),
         role: "assistant",
@@ -243,6 +421,8 @@ export default function RenderPage() {
   }
 
   function handleResetAll() {
+    clearLoadingTimers();
+
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
     }
@@ -252,6 +432,9 @@ export default function RenderPage() {
     setPreviewUrl("");
     setInterpreted(null);
     setResult(null);
+    setUsedEngine(null);
+    setStatusText("");
+    setFallbackMessageVisible(false);
     setIsDragging(false);
     setMessages([
       {
@@ -286,8 +469,8 @@ export default function RenderPage() {
                 Konuşmalı Render Revize Sistemi
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65 md:text-[15px]">
-                Revize istediğin alanları yorumlar, gerekirse soru sorar ve yalnızca
-                istenen bölgelere odaklanarak tek sonuç üretir.
+                Revize istediğin alanları yorumlar, gerekirse soru sorar ve en uygun
+                üretim motorunu otomatik seçerek sonucu oluşturur.
               </p>
             </div>
 
@@ -412,6 +595,18 @@ export default function RenderPage() {
                   {isGenerating ? "Üretiliyor..." : "Devam et ve üret"}
                 </button>
               </div>
+
+              {statusText ? (
+                <div className="mt-4 rounded-[22px] border border-white/10 bg-black/20 p-4 text-sm text-white/75">
+                  {statusText}
+                </div>
+              ) : null}
+
+              {fallbackMessageVisible ? (
+                <div className="mt-4 rounded-[22px] border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+                  {FALLBACK_MESSAGE}
+                </div>
+              ) : null}
             </section>
 
             {interpreted ? (
@@ -550,7 +745,7 @@ export default function RenderPage() {
                         <span className="ml-1">
                           {isInterpreting
                             ? "Revize talebin analiz ediliyor..."
-                            : "En uygun render motoru seçiliyor..."}
+                            : statusText || "Auto Engine çalışıyor..."}
                         </span>
                       </div>
                     </div>
@@ -561,9 +756,35 @@ export default function RenderPage() {
 
             {result ? (
               <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm font-medium text-white">Üretilen sonuç</p>
-                  <p className="text-xs text-white/35">tek görsel</p>
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white">Üretilen sonuç</p>
+                    <p className="mt-1 text-xs text-white/35">tek görsel</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {usedEngine ? (
+                      <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">
+                        {formatEngineLabel(usedEngine)}
+                      </div>
+                    ) : null}
+
+                    <button
+                      onClick={handleDownload}
+                      disabled={downloadLoading}
+                      className="rounded-full border border-white/12 bg-white px-4 py-2 text-xs font-medium text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {downloadLoading ? "İndiriliyor..." : "İndir"}
+                    </button>
+
+                    <button
+                      onClick={handleShare}
+                      disabled={shareLoading}
+                      className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {shareLoading ? "Paylaşılıyor..." : "Paylaş"}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="overflow-hidden rounded-[24px] border border-white/10 bg-black/20">

@@ -35,7 +35,7 @@ export default function AdminLoginPage() {
         localStorage.setItem("portal_user", JSON.stringify(data.user));
       }
 
-      router.push("/portal");
+    
       router.refresh();
     } catch (err: any) {
       setError(err?.message || "Giriş sırasında hata oluştu.");
