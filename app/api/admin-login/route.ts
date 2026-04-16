@@ -21,11 +21,20 @@ export async function POST(req: Request) {
       );
     }
 
-    // cookie set (senin sistemde varsa aynısını koru)
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: "Giriş başarılı",
     });
+
+    response.cookies.set("tudesign_admin", "authenticated", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return response;
   } catch (error) {
     return NextResponse.json(
       { success: false, error: "Login hatası oluştu." },
