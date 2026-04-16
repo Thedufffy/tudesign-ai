@@ -90,7 +90,9 @@ export default function RenderPage() {
     try {
       return JSON.parse(raw);
     } catch {
-      throw new Error(raw ? `JSON yerine şu döndü: ${raw.slice(0, 200)}` : "Sunucudan boş yanıt döndü.");
+      throw new Error(
+        raw ? `JSON yerine şu döndü: ${raw.slice(0, 200)}` : "Sunucudan boş yanıt döndü."
+      );
     }
   }
 
@@ -295,7 +297,8 @@ export default function RenderPage() {
                 Konuşmalı Render Revize Sistemi
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65 md:text-[15px]">
-                Revize istediğin alanları yorumlar, gerekli yerde soru sorar ve yalnızca istenen bölgelere odaklanarak tek sonuç üretir.
+                Revize istediğin alanları yorumlar, gerekirse soru sorar ve yalnızca
+                istenen bölgelere odaklanarak tek sonuç üretir.
               </p>
             </div>
 
@@ -360,7 +363,8 @@ export default function RenderPage() {
               <div className="mb-4">
                 <p className="text-sm font-medium text-white">Görsel yükleme</p>
                 <p className="mt-1 text-xs leading-5 text-white/45">
-                  İstersen önce metni yaz, istersen görseli hemen bırak. Sistem iki akışta da çalışır.
+                  İstersen önce metni yaz, istersen görseli hemen bırak. Sistem iki
+                  akışta da çalışır.
                 </p>
               </div>
 
@@ -392,7 +396,9 @@ export default function RenderPage() {
                 </div>
 
                 <p className="text-sm font-medium text-white">
-                  {file ? "Görseli değiştirmek için tıkla veya bırak" : "Görseli buraya sürükle bırak"}
+                  {file
+                    ? "Görseli değiştirmek için tıkla veya bırak"
+                    : "Görseli buraya sürükle bırak"}
                 </p>
                 <p className="mt-2 text-xs leading-5 text-white/45">
                   PNG, JPG veya WEBP yükleyebilirsin
@@ -415,7 +421,8 @@ export default function RenderPage() {
               <div className="mb-4">
                 <p className="text-sm font-medium text-white">Revize isteği</p>
                 <p className="mt-1 text-xs leading-5 text-white/45">
-                  Örnek: yalnızca duş alanı duvarını bordo tona çek, zemini koyu seramik yap, diğer tüm alanları koru.
+                  Örnek: yalnızca duş alanı duvarını bordo tona çek, zemini koyu
+                  seramik yap, diğer tüm alanları koru.
                 </p>
               </div>
 
@@ -447,38 +454,83 @@ export default function RenderPage() {
 
             {interpreted ? (
               <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <p className="mb-4 text-sm font-medium text-white">Yorumlanan revize özeti</p>
+                <div className="mb-5">
+                  <p className="text-sm font-medium text-white">Revize özeti</p>
+                  <p className="mt-1 text-xs text-white/40">
+                    Sistem yalnızca istediğin alanlara odaklanarak çalışacak.
+                  </p>
+                </div>
 
-                <div className="space-y-5 text-sm text-white/70">
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-[0.24em] text-white/35">
-                      Özet
+                <div className="space-y-4">
+                  <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
+                    <p className="mb-2 text-[11px] uppercase tracking-[0.24em] text-white/35">
+                      Anlaşılan istek
                     </p>
-                    <p className="leading-6">{interpreted.summary_tr}</p>
+                    <p className="text-sm leading-6 text-white/80">
+                      {interpreted.summary_tr}
+                    </p>
                   </div>
 
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-[0.24em] text-white/35">
-                      Korunacaklar
+                  <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
+                    <p className="mb-3 text-[11px] uppercase tracking-[0.24em] text-white/35">
+                      Korunacak alanlar
                     </p>
+
+                    <div className="flex flex-wrap gap-2">
+                      {interpreted.preserve.length > 0 ? (
+                        interpreted.preserve.map((item, i) => (
+                          <span
+                            key={i}
+                            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/75"
+                          >
+                            {item}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-sm text-white/50">
+                          Ek koruma notu bulunmuyor.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
+                    <p className="mb-3 text-[11px] uppercase tracking-[0.24em] text-white/35">
+                      Uygulanacak revizeler
+                    </p>
+
                     <div className="space-y-2">
-                      {interpreted.preserve.map((item, i) => (
-                        <div
-                          key={i}
-                          className="rounded-2xl border border-white/8 bg-black/20 px-3 py-2"
-                        >
-                          {item}
-                        </div>
-                      ))}
+                      {interpreted.changes.length > 0 ? (
+                        interpreted.changes.map((item, i) => (
+                          <div
+                            key={i}
+                            className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3"
+                          >
+                            <p className="text-sm leading-6 text-white/80">{item.value}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-white/50">
+                          Genel iyileştirme odaklı bir revize algılandı.
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   {interpreted.missing_questions?.length > 0 ? (
-                    <div className="rounded-[22px] border border-amber-400/30 bg-amber-400/10 p-4 text-amber-100">
-                      <p className="mb-2 text-sm font-medium">Netleşmesi faydalı sorular</p>
-                      <div className="space-y-1 text-sm">
+                    <div className="rounded-[22px] border border-amber-400/30 bg-amber-400/10 p-4">
+                      <p className="mb-3 text-sm font-medium text-amber-100">
+                        Netleştirilirse sonuç güçlenir
+                      </p>
+
+                      <div className="space-y-2">
                         {interpreted.missing_questions.map((item, i) => (
-                          <p key={i}>- {item}</p>
+                          <div
+                            key={i}
+                            className="rounded-2xl border border-amber-300/20 bg-black/10 px-3 py-2 text-sm text-amber-50"
+                          >
+                            {item}
+                          </div>
                         ))}
                       </div>
                     </div>
