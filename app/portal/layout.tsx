@@ -2,17 +2,28 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+type PortalModule =
+  | "render-lab"
+  | "fashion"
+  | "references"
+  | "uploads"
+  | "works"
+  | "admin";
 
 type PortalSessionUser = {
-  username: string;
-  isAdmin?: boolean;
-  canAccessRenderLab?: boolean;
-  canAccessFashion?: boolean;
-  canAccessReferences?: boolean;
-  canAccessUploads?: boolean;
-  canAccessWorks?: boolean;
+  username?: string;
+  email?: string;
+  role?: "admin" | "client";
+  modules?: PortalModule[];
 };
+
+function hasModuleAccess(user: PortalSessionUser | null, moduleName: PortalModule) {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  return Array.isArray(user.modules) && user.modules.includes(moduleName);
+}
 
 function NavItem({
   href,
@@ -48,7 +59,6 @@ export default function PortalLayout({
   const [user, setUser] = useState<PortalSessionUser | null>(null);
   const [ready, setReady] = useState(false);
 
-  // sağ klik kapatma
   useEffect(() => {
     const preventContextMenu = (e: MouseEvent) => {
       e.preventDefault();
@@ -60,7 +70,6 @@ export default function PortalLayout({
     };
   }, []);
 
-  // kullanıcı çekme
   useEffect(() => {
     const raw = localStorage.getItem("portal_user");
 
@@ -79,21 +88,29 @@ export default function PortalLayout({
     }
   }, [router]);
 
-  // yetki kontrol
   useEffect(() => {
     if (!user) return;
 
     const blocked =
-      (pathname === "/portal/render-lab" && !user.canAccessRenderLab) ||
-      (pathname === "/portal/fashion" && !user.canAccessFashion) ||
-      (pathname === "/portal/references" && !user.canAccessReferences) ||
-      (pathname === "/portal/uploads" && !user.canAccessUploads) ||
-      (pathname === "/portal/works" && !user.canAccessWorks);
+      (pathname === "/portal/render-lab" &&
+        !hasModuleAccess(user, "render-lab")) ||
+      (pathname === "/portal/fashion" &&
+        !hasModuleAccess(user, "fashion")) ||
+      (pathname === "/portal/references" &&
+        !hasModuleAccess(user, "references")) ||
+      (pathname === "/portal/uploads" &&
+        !hasModuleAccess(user, "uploads")) ||
+      (pathname === "/portal/works" &&
+        !hasModuleAccess(user, "works")) ||
+      (pathname.startsWith("/portal/admin") &&
+        !hasModuleAccess(user, "admin"));
 
     if (blocked) {
       router.replace("/portal");
     }
   }, [pathname, router, user]);
+
+  const isAdmin = useMemo(() => user?.role === "admin", [user]);
 
   function handleLogout() {
     localStorage.removeItem("portal_user");
@@ -109,92 +126,90 @@ export default function PortalLayout({
   }
 
   return (
-    <>
-      {/* 🔥 PWA bağlantıları */}
-      <head>
-        <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="icon" href="/icon-192.png" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <meta name="theme-color" content="#0a0a0a" />
-      </head>
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
+        <aside className="border-r border-white/10 bg-black/40 p-5">
+          <div className="mb-8">
+            <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
+              tuDesign AI
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold">Portal</h2>
+            <p className="mt-2 text-sm text-white/45">
+              Merkezi kontrol paneli
+            </p>
+            <p className="mt-3 text-xs text-white/30">
+              Kullanıcı: {user.username || user.email || "portal-user"}
+            </p>
+          </div>
 
-      <div className="min-h-screen bg-[#0a0a0a] text-white">
-        <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
-          <aside className="border-r border-white/10 bg-black/40 p-5">
-            <div className="mb-8">
-              <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
-                tuDesign AI
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold">Portal</h2>
-              <p className="mt-2 text-sm text-white/45">
-                Merkezi kontrol paneli
-              </p>
-              <p className="mt-3 text-xs text-white/30">
-                Kullanıcı: {user.username}
-              </p>
-            </div>
+          <div className="space-y-3">
+            <NavItem
+              href="/portal"
+              label="Dashboard"
+              active={pathname === "/portal"}
+            />
 
-            <div className="space-y-3">
+            {hasModuleAccess(user, "render-lab") ? (
               <NavItem
-                href="/portal"
-                label="Dashboard"
-                active={pathname === "/portal"}
+                href="/portal/render-lab"
+                label="Render Lab"
+                active={pathname === "/portal/render-lab"}
               />
+            ) : null}
 
-              {user.canAccessFashion && (
-                <NavItem
-                  href="/portal/fashion"
-                  label="Fashion Studio"
-                  active={pathname === "/portal/fashion"}
-                />
-              )}
+            {hasModuleAccess(user, "fashion") ? (
+              <NavItem
+                href="/portal/fashion"
+                label="Fashion Studio"
+                active={pathname === "/portal/fashion"}
+              />
+            ) : null}
 
-              {user.canAccessRenderLab && (
-                <NavItem
-                  href="/portal/render-lab"
-                  label="Render Lab"
-                  active={pathname === "/portal/render-lab"}
-                />
-              )}
+            {hasModuleAccess(user, "references") ? (
+              <NavItem
+                href="/portal/references"
+                label="References"
+                active={pathname === "/portal/references"}
+              />
+            ) : null}
 
-              {user.canAccessReferences && (
-                <NavItem
-                  href="/portal/references"
-                  label="References"
-                  active={pathname === "/portal/references"}
-                />
-              )}
+            {hasModuleAccess(user, "works") ? (
+              <NavItem
+                href="/portal/works"
+                label="Works"
+                active={pathname === "/portal/works"}
+              />
+            ) : null}
 
-              {user.canAccessWorks && (
-                <NavItem
-                  href="/portal/works"
-                  label="Works"
-                  active={pathname === "/portal/works"}
-                />
-              )}
+            {hasModuleAccess(user, "uploads") ? (
+              <NavItem
+                href="/portal/uploads"
+                label="Uploads"
+                active={pathname === "/portal/uploads"}
+              />
+            ) : null}
 
-              {user.canAccessUploads && (
-                <NavItem
-                  href="/portal/uploads"
-                  label="Uploads"
-                  active={pathname === "/portal/uploads"}
-                />
-              )}
-            </div>
+            {isAdmin ? (
+              <NavItem
+                href="/portal/admin/users"
+                label="Admin Panel"
+                active={pathname.startsWith("/portal/admin")}
+              />
+            ) : null}
+          </div>
 
-            <div className="mt-8 border-t border-white/10 pt-5">
-              <button
-                onClick={handleLogout}
-                className="w-full border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-white/70 transition hover:bg-white/[0.06] hover:text-white"
-              >
-                Logout
-              </button>
-            </div>
-          </aside>
+          <div className="mt-8 border-t border-white/10 pt-5">
+            <button
+              onClick={handleLogout}
+              className="w-full border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-white/70 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              Logout
+            </button>
+          </div>
+        </aside>
 
-          <div className="min-w-0">{children}</div>
-        </div>
+        <div className="min-w-0">{children}</div>
       </div>
-    </>
+    </div>
   );
 }
