@@ -1,172 +1,513 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 
-type Engine = "gemini" | "chatgpt" | "openai";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+type EngineName = "openai-edit" | "gemini" | "openai-generate";
 
-function getEngineName(engine: Engine) {
-  if (engine === "gemini") return "GearRenderEngineV1 çalışıyor";
-  if (engine === "chatgpt") return "ChargeRenderEngineV1 çalışıyor";
-  return "OnixRenderEngineV1 çalışıyor";
+type EngineSuccess = {
+  success: true;
+  images: string[];
+  engine: EngineName;
+};
+
+type EngineFailure = {
+  success: false;
+  error: string;
+};
+
+type EngineResult = EngineSuccess | EngineFailure;
+
+type AutoEngineResult =
+  | {
+      ok: true;
+      images: string[];
+      engine: EngineName;
+      tried: EngineName[];
+      fallbackUsed: boolean;
+    }
+  | {
+      ok: false;
+      tried: EngineName[];
+      errors: { engine: EngineName; error: string }[];
+    };
+
+function getEngineDisplayName(engine: EngineName) {
+  if (engine === "openai-edit") return "Auto Engine / Vision Edit";
+  if (engine === "gemini") return "Auto Engine / Gemini Vision";
+  return "Auto Engine / Image Generation";
 }
 
-function normalizeEngine(value: FormDataEntryValue | null): Engine {
-  const raw = String(value || "openai").toLowerCase();
+function buildRevisionPrompt(note: string, style?: string) {
+  return `
+You are a premium architectural render revision system.
 
-  if (raw === "gemini") return "gemini";
-  if (raw === "chatgpt") return "chatgpt";
-  return "openai";
+Revise the uploaded render according to the user's request while preserving:
+- original camera angle
+- original composition
+- room layout
+- architectural proportions
+- core furniture placement unless explicitly changed
+
+Target output:
+- photorealistic
+- premium
+- elegant
+- believable lighting
+- natural shadows
+- realistic materials
+- editorial quality visualization
+
+Style direction:
+${style || "premium modern"}
+
+User revision request:
+${note || "Improve realism, lighting, and overall premium quality."}
+
+Important rules:
+- do not redesign the whole project unless explicitly requested
+- do not break geometry
+- do not crop important scene content
+- avoid artificial looking textures
+- keep scale realistic
+- keep the final result polished and convincing
+`.trim();
 }
 
-function buildPrompt(userPrompt: string) {
-  const cleaned = userPrompt.trim();
+function detectEditIntent(note: string) {
+  const value = (note || "").toLowerCase();
 
-  if (cleaned) {
-    return [
-      "Edit this uploaded interior render.",
-      "Apply only the requested revisions.",
-      "Do not redesign unrelated areas.",
-      "Preserve the existing layout, camera angle, framing, proportions, and all areas not explicitly mentioned.",
-      "Keep the result photorealistic, premium, and clean.",
-      "",
-      "Requested revision:",
-      cleaned,
-    ].join("\n");
+  const editKeywords = [
+    "revize",
+    "düzenle",
+    "değiştir",
+    "ekle",
+    "kaldır",
+    "ışık",
+    "malzeme",
+    "materyal",
+    "renk",
+    "doku",
+    "aksesuar",
+    "çiçek",
+    "spot",
+    "gerçekçi",
+    "iyileştir",
+    "aynı kalsın",
+    "bozmadan",
+    "preserve",
+    "keep",
+    "edit",
+    "revise",
+  ];
+
+  const score = editKeywords.filter((k) => value.includes(k)).length;
+
+  return {
+    isEditLike: score > 0,
+    score,
+  };
+}
+
+function pickEngineOrder(params: { note: string; hasImage: boolean }): EngineName[] {
+  const { note, hasImage } = params;
+  const intent = detectEditIntent(note);
+
+  if (hasImage && intent.isEditLike) {
+    return ["openai-edit", "gemini", "openai-generate"];
   }
 
-  return [
-    "Edit this uploaded interior render.",
-    "Keep the same layout, camera angle, framing, and proportions.",
-    "Make only subtle, photorealistic improvements.",
-    "Do not redesign unrelated areas.",
-  ].join("\n");
+  if (hasImage) {
+    return ["openai-edit", "gemini", "openai-generate"];
+  }
+
+  return ["openai-generate", "gemini"];
 }
 
-async function runGeminiEdit(image: File, prompt: string) {
-  const buffer = Buffer.from(await image.arrayBuffer());
+async function fileToBase64(file: File) {
+  const bytes = await file.arrayBuffer();
+  return Buffer.from(bytes).toString("base64");
+}
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${
-      process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview"
-    }:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
+function normalizeImageList(images: unknown): string[] {
+  if (!Array.isArray(images)) return [];
+
+  return images
+    .filter((item): item is string => typeof item === "string" && item.length > 0)
+    .map((item) => {
+      if (item.startsWith("data:image")) return item;
+      return `data:image/png;base64,${item}`;
+    });
+}
+
+function getOpenAIImageModel() {
+  return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+}
+
+function getGeminiImageModel() {
+  return process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
+}
+
+async function ensureOkJson(response: Response) {
+  const text = await response.text();
+
+  let parsed: any = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!response.ok) {
+    const message =
+      parsed?.error?.message ||
+      parsed?.error ||
+      text ||
+      `HTTP ${response.status} hatası`;
+    throw new Error(message);
+  }
+
+  return parsed;
+}
+
+async function runOpenAIEdit(params: {
+  image: File;
+  prompt: string;
+}): Promise<EngineResult> {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "OPENAI_API_KEY tanımlı değil.",
+      };
+    }
+
+    const { image, prompt } = params;
+    const imageBase64 = await fileToBase64(image);
+    const imageDataUrl = `data:${image.type || "image/png"};base64,${imageBase64}`;
+
+    const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        contents: [
+        model: getOpenAIImageModel(),
+        images: [
           {
-            parts: [
-              {
-                text: prompt,
-              },
-              {
-                inlineData: {
-                  mimeType: image.type || "image/png",
-                  data: buffer.toString("base64"),
-                },
-              },
-            ],
+            image_url: imageDataUrl,
           },
         ],
+        prompt,
+        size: "1536x1024",
+        quality: "high",
+        output_format: "png",
+        moderation: "auto",
+        input_fidelity: "high",
+        n: 1,
       }),
-    }
-  );
+    });
 
-  const data = await response.json();
+    const data = await ensureOkJson(response);
 
-  if (!response.ok) {
-    throw new Error(
-      data?.error?.message || "Gemini üretim isteği başarısız oldu."
+    const images = normalizeImageList(
+      data?.data?.map((item: any) => item?.b64_json).filter(Boolean) ?? []
     );
+
+    if (!images.length) {
+      return {
+        success: false,
+        error: "OpenAI edit boş sonuç döndürdü.",
+      };
+    }
+
+    return {
+      success: true,
+      images,
+      engine: "openai-edit",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "OpenAI edit hatası",
+    };
   }
-
-  const imagePart = data?.candidates?.[0]?.content?.parts?.find(
-    (part: any) => part?.inlineData?.data
-  );
-
-  const base64 = imagePart?.inlineData?.data;
-
-  if (!base64) {
-    throw new Error("Gemini görsel çıktısı dönmedi.");
-  }
-
-  return base64;
 }
 
-async function runOpenAIEdit(
-  image: File,
-  prompt: string,
-  model: "gpt-image-1" | "chatgpt-image-latest"
-) {
-  const buffer = Buffer.from(await image.arrayBuffer());
+async function runGemini(params: {
+  image: File;
+  prompt: string;
+}): Promise<EngineResult> {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "GEMINI_API_KEY tanımlı değil.",
+      };
+    }
 
-  const result = await openai.images.edit({
-    model,
-    image: new File([buffer], image.name || "input.png", {
-      type: image.type || "image/png",
-    }),
-    prompt,
-    size: "1024x1024",
+    const { image, prompt } = params;
+    const imageBase64 = await fileToBase64(image);
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        getGeminiImageModel()
+      )}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: image.type || "image/png",
+                    data: imageBase64,
+                  },
+                },
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.4,
+          },
+        }),
+      }
+    );
+
+    const data = await ensureOkJson(response);
+
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const images = normalizeImageList(
+      parts
+        .filter((part: any) => !!part?.inlineData?.data)
+        .map((part: any) => part.inlineData.data)
+    );
+
+    if (!images.length) {
+      const textPart = parts.find((part: any) => typeof part?.text === "string")?.text;
+      return {
+        success: false,
+        error:
+          textPart ||
+          "Gemini görsel üretmedi veya response içinde inlineData bulunamadı.",
+      };
+    }
+
+    return {
+      success: true,
+      images,
+      engine: "gemini",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Gemini hatası",
+    };
+  }
+}
+
+async function runOpenAIGenerate(params: {
+  prompt: string;
+}): Promise<EngineResult> {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "OPENAI_API_KEY tanımlı değil.",
+      };
+    }
+
+    const { prompt } = params;
+
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: getOpenAIImageModel(),
+        prompt,
+        size: "1536x1024",
+        quality: "high",
+        output_format: "png",
+        moderation: "auto",
+        background: "auto",
+        n: 1,
+      }),
+    });
+
+    const data = await ensureOkJson(response);
+
+    const images = normalizeImageList(
+      data?.data?.map((item: any) => item?.b64_json).filter(Boolean) ?? []
+    );
+
+    if (!images.length) {
+      return {
+        success: false,
+        error: "OpenAI generate boş sonuç döndürdü.",
+      };
+    }
+
+    return {
+      success: true,
+      images,
+      engine: "openai-generate",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "OpenAI generate hatası",
+    };
+  }
+}
+
+async function runAutoEngine(params: {
+  image: File | null;
+  note: string;
+  style?: string;
+}): Promise<AutoEngineResult> {
+  const { image, note, style } = params;
+
+  const tried = pickEngineOrder({
+    note,
+    hasImage: !!image,
   });
 
-  const base64 = result.data?.[0]?.b64_json;
+  const prompt = buildRevisionPrompt(note, style);
+  const errors: { engine: EngineName; error: string }[] = [];
 
-  if (!base64) {
-    throw new Error("OpenAI görsel çıktısı dönmedi.");
+  for (let i = 0; i < tried.length; i++) {
+    const engine = tried[i];
+    let result: EngineResult;
+
+    if (engine === "openai-edit") {
+      if (!image) {
+        errors.push({
+          engine,
+          error: "OpenAI edit için görsel gerekli.",
+        });
+        continue;
+      }
+
+      result = await runOpenAIEdit({
+        image,
+        prompt,
+      });
+    } else if (engine === "gemini") {
+      if (!image) {
+        errors.push({
+          engine,
+          error: "Gemini image akışı için görsel gerekli.",
+        });
+        continue;
+      }
+
+      result = await runGemini({
+        image,
+        prompt,
+      });
+    } else {
+      result = await runOpenAIGenerate({
+        prompt,
+      });
+    }
+
+    if (result.success) {
+      return {
+        ok: true,
+        images: normalizeImageList(result.images),
+        engine: result.engine,
+        tried,
+        fallbackUsed: i > 0,
+      };
+    }
+
+    errors.push({
+      engine,
+      error: result.error,
+    });
   }
 
-  return base64;
+  return {
+    ok: false,
+    tried,
+    errors,
+  };
 }
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const formData = await req.formData();
+    const formData = await request.formData();
 
     const image = formData.get("image");
-    const prompt = String(formData.get("prompt") || "");
-    const engine = normalizeEngine(formData.get("engine"));
+    const noteFromNote = String(formData.get("note") || "");
+    const noteFromPrompt = String(formData.get("prompt") || "");
+    const style = String(formData.get("style") || "premium modern");
 
-    if (!(image instanceof File)) {
+    const note = (noteFromNote || noteFromPrompt || "").trim();
+    const file = image instanceof File ? image : null;
+
+    if (!file && !note) {
       return NextResponse.json(
-        { success: false, error: "Görsel yok." },
+        {
+          success: false,
+          error: "Görsel veya revize notu gerekli.",
+        },
         { status: 400 }
       );
     }
 
-    const finalPrompt = buildPrompt(prompt);
+    const result = await runAutoEngine({
+      image: file,
+      note,
+      style,
+    });
 
-    let resultBase64 = "";
-
-    if (engine === "gemini") {
-      resultBase64 = await runGeminiEdit(image, finalPrompt);
-    } else if (engine === "chatgpt") {
-      resultBase64 = await runOpenAIEdit(
-        image,
-        finalPrompt,
-        "chatgpt-image-latest"
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Hiçbir render motoru başarılı sonuç üretemedi.",
+          tried: result.tried,
+          details: result.errors,
+        },
+        { status: 500 }
       );
-    } else {
-      resultBase64 = await runOpenAIEdit(image, finalPrompt, "gpt-image-1");
     }
+
+    const firstImage = result.images[0] ?? null;
 
     return NextResponse.json({
       success: true,
-      image: resultBase64,
-      engineName: getEngineName(engine),
-      engine,
+      image: firstImage,
+      images: result.images,
+      engine: result.engine,
+      engineName: getEngineDisplayName(result.engine),
+      fallbackUsed: result.fallbackUsed,
+      message: "Render revizesi tamamlandı.",
     });
-  } catch (error: any) {
-    console.error("generate route error:", error);
-
+  } catch (error) {
     return NextResponse.json(
       {
         success: false,
-        error: error?.message || "Üretim hatası",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Bilinmeyen bir sunucu hatası oluştu.",
       },
       { status: 500 }
     );

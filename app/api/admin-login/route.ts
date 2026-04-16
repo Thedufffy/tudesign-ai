@@ -1,36 +1,34 @@
 import { NextResponse } from "next/server";
-import { portalUsers } from "@/lib/portal-users";
 
 export async function POST(req: Request) {
   try {
     const { username, password } = await req.json();
 
-    const user = portalUsers.find(
-      (item) => item.username === username && item.password === password
-    );
+    const ADMIN_USERNAME = "admin";
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-    if (!user) {
+    if (!ADMIN_PASSWORD) {
       return NextResponse.json(
-        { success: false, error: "Hatalı kullanıcı adı veya şifre." },
+        { success: false, error: "ADMIN_PASSWORD tanımlı değil." },
+        { status: 500 }
+      );
+    }
+
+    if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+      return NextResponse.json(
+        { success: false, error: "Kullanıcı adı veya şifre hatalı." },
         { status: 401 }
       );
     }
 
+    // cookie set (senin sistemde varsa aynısını koru)
     return NextResponse.json({
       success: true,
-      user: {
-        username: user.username,
-        isAdmin: !!user.isAdmin,
-        canAccessRenderLab: !!user.canAccessRenderLab,
-        canAccessFashion: !!user.canAccessFashion,
-        canAccessReferences: !!user.canAccessReferences,
-        canAccessUploads: !!user.canAccessUploads,
-        canAccessWorks: !!user.canAccessWorks,
-      },
+      message: "Giriş başarılı",
     });
-  } catch (error: any) {
+  } catch (error) {
     return NextResponse.json(
-      { success: false, error: error?.message || "Login hatası." },
+      { success: false, error: "Login hatası oluştu." },
       { status: 500 }
     );
   }

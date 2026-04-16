@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Provider = "gemini" | "chatgpt" | "openai";
-
 type InterpretedChange = {
   target: string;
   action: string;
@@ -32,18 +30,10 @@ function createId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function getEngineLabel(provider: Provider) {
-  if (provider === "gemini") return "GearRenderEngine çalışıyor";
-  if (provider === "chatgpt") return "ChargeRenderEngine çalışıyor";
-  return "OnixRenderEngine çalışıyor";
-}
-
 export default function RenderPage() {
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
-
-  const [provider, setProvider] = useState<Provider>("openai");
 
   const [interpreted, setInterpreted] = useState<InterpretedResult | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -119,7 +109,7 @@ export default function RenderPage() {
         },
         body: JSON.stringify({
           prompt: userText,
-          provider,
+          mode: "auto",
         }),
       });
 
@@ -169,15 +159,16 @@ export default function RenderPage() {
         id: createId(),
         role: "assistant",
         kind: "normal",
-        content: `İstediğin revizeyi oluşturmak için çalışıyorum. ${getEngineLabel(provider)}.`,
+        content:
+          "İstediğin revizeyi oluşturmak için çalışıyorum. En uygun render motoru otomatik seçiliyor.",
       });
 
       const formData = new FormData();
-      formData.append("file", file);
-      formData.append("interpreted", JSON.stringify(interpreted));
-      formData.append("provider", provider);
+      formData.append("image", file);
+      formData.append("prompt", interpreted.summary_tr);
+      formData.append("mode", "auto");
 
-      const res = await fetch("/api/render/generate", {
+      const res = await fetch("/api/generate", {
         method: "POST",
         body: formData,
       });
@@ -188,21 +179,19 @@ export default function RenderPage() {
         throw new Error(data?.error || "Render üretimi başarısız oldu.");
       }
 
-      const firstImage =
-        data?.image ||
-        (Array.isArray(data?.images) && data.images.length > 0 ? data.images[0] : null);
-
-      if (!firstImage) {
+      if (!data?.image) {
         throw new Error("Üretim tamamlandı ama görsel dönmedi.");
       }
 
-      setResult(firstImage);
+      setResult(`data:image/png;base64,${data.image}`);
 
       pushMessage({
         id: createId(),
         role: "assistant",
         kind: "success",
-        content: `Revize hazır. ${getEngineLabel(provider)} sonucu üretildi.`,
+        content: data?.engineName
+          ? `Revize hazır. ${data.engineName}.`
+          : "Revize hazır.",
       });
     } catch (error: any) {
       pushMessage({
@@ -317,45 +306,18 @@ export default function RenderPage() {
           <aside className="space-y-6">
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
               <div className="mb-4">
-                <p className="text-sm font-medium text-white">Motor seçimi</p>
+                <p className="text-sm font-medium text-white">Akıllı motor yönlendirmesi</p>
                 <p className="mt-1 text-xs leading-5 text-white/45">
-                  İstersen çalışma akışını motor bazlı test edebilirsin.
+                  Sistem, revize isteğinin yapısına göre en uygun motoru otomatik seçer.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <button
-                  onClick={() => setProvider("gemini")}
-                  className={`rounded-2xl border px-4 py-3 text-sm transition ${
-                    provider === "gemini"
-                      ? "border-white bg-white text-black"
-                      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                  }`}
-                >
-                  Gemini
-                </button>
-
-                <button
-                  onClick={() => setProvider("chatgpt")}
-                  className={`rounded-2xl border px-4 py-3 text-sm transition ${
-                    provider === "chatgpt"
-                      ? "border-white bg-white text-black"
-                      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                  }`}
-                >
-                  ChatGPT
-                </button>
-
-                <button
-                  onClick={() => setProvider("openai")}
-                  className={`rounded-2xl border px-4 py-3 text-sm transition ${
-                    provider === "openai"
-                      ? "border-white bg-white text-black"
-                      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                  }`}
-                >
-                  OpenAI
-                </button>
+              <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                <p className="text-sm leading-6 text-white/75">
+                  Lokal revizelerde, materyal hassasiyetinde ve üretim kararlılığında
+                  uygun motor otomatik belirlenir. Seçim kullanıcıya gösterilmez,
+                  sonuçta hangi motorun çalıştığı konuşma akışında belirtilir.
+                </p>
               </div>
             </section>
 
@@ -588,7 +550,7 @@ export default function RenderPage() {
                         <span className="ml-1">
                           {isInterpreting
                             ? "Revize talebin analiz ediliyor..."
-                            : `${getEngineLabel(provider)}.`}
+                            : "En uygun render motoru seçiliyor..."}
                         </span>
                       </div>
                     </div>
