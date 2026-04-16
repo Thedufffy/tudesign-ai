@@ -170,36 +170,15 @@ export default function PortalDashboardPage() {
               ) : null}
             </section>
 
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-              <p className="text-sm font-medium text-white">Admin Panel</p>
-              <p className="mt-2 text-sm leading-6 text-white/60">
-                Üyelik, kredi ve yetki işlemleri için ayrı yönetim alanı.
-              </p>
+            {isAdmin ? (
+              <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+                <p className="text-sm font-medium text-white">Admin Panel</p>
+                <p className="mt-2 text-sm leading-6 text-white/60">
+                  Üyelik, kredi ve yetki işlemleri için ayrı yönetim alanı.
+                </p>
 
-              <div className="mt-4 space-y-3">
-                {adminLinks.map((item) => {
-                  const locked = !isAdmin;
-
-                  if (locked) {
-                    return (
-                      <div
-                        key={item.href}
-                        className="rounded-[22px] border border-white/10 bg-black/20 p-4 opacity-60"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-white">{item.title}</p>
-                          <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-amber-100">
-                            Yetki gerekli
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs leading-5 text-white/45">
-                          {item.description}
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  return (
+                <div className="mt-4 space-y-3">
+                  {adminLinks.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
@@ -210,10 +189,10 @@ export default function PortalDashboardPage() {
                         {item.description}
                       </p>
                     </Link>
-                  );
-                })}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </aside>
 
           <section>
