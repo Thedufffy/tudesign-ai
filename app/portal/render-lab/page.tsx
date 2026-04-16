@@ -1,805 +1,572 @@
-"use client";
+import { NextResponse } from "next/server";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-type InterpretedChange = {
-  target: string;
-  action: string;
-  value: string;
+type EngineName = "openai-edit" | "gemini" | "openai-generate";
+
+type EngineSuccess = {
+  success: true;
+  images: string[];
+  engine: EngineName;
 };
 
-type InterpretedResult = {
-  summary_tr: string;
-  task_type: "render_edit";
-  space_type: "interior" | "exterior" | "unknown";
-  style_intent: string;
-  preserve: string[];
-  changes: InterpretedChange[];
-  constraints: string[];
-  missing_questions: string[];
+type EngineFailure = {
+  success: false;
+  error: string;
 };
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  kind?: "normal" | "interpretation" | "success" | "error" | "question";
-};
+type EngineResult = EngineSuccess | EngineFailure;
 
-function createId() {
-  return Math.random().toString(36).slice(2, 10);
-}
+type AutoEngineResult =
+  | {
+      ok: true;
+      images: string[];
+      engine: EngineName;
+      tried: EngineName[];
+      fallbackUsed: boolean;
+    }
+  | {
+      ok: false;
+      tried: EngineName[];
+      errors: { engine: EngineName; error: string }[];
+    };
 
-function formatEngineLabel(engine?: string | null) {
-  if (!engine) return "Auto Engine aktif";
-
+function getEngineDisplayName(engine: EngineName) {
   if (engine === "openai-edit") return "Auto Engine / Vision Edit";
   if (engine === "gemini") return "Auto Engine / Gemini Vision";
-  if (engine === "openai-generate") return "Auto Engine / Image Generation";
-
-  if (engine === "gemini-engine") return "Auto Engine / Gemini Vision";
-  if (engine === "openai-engine") return "Auto Engine / Vision Edit";
-  if (engine === "chatgpt-engine") return "Auto Engine / Vision Edit";
-
-  return "Auto Engine aktif";
+  return "Auto Engine / Image Generation";
 }
 
-const FALLBACK_MESSAGE =
-  "İlk üretim denemesi tamamlanamadı. Alternatif render motoru ile devam ediliyor...";
+function buildRevisionPrompt(
+  note: string,
+  style?: string,
+  hasReferenceImage?: boolean
+) {
+  return `
+You are a premium architectural render revision system.
 
-export default function RenderPage() {
-  const [input, setInput] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+Revise the uploaded render according to the user's request while preserving:
+- original camera angle
+- original composition
+- room layout
+- architectural proportions
+- core furniture placement unless explicitly changed
 
-  const [interpreted, setInterpreted] = useState<InterpretedResult | null>(null);
-  const [result, setResult] = useState<string | null>(null);
+Target output:
+- photorealistic
+- premium
+- elegant
+- believable lighting
+- natural shadows
+- realistic materials
+- editorial quality visualization
 
-  const [isDragging, setIsDragging] = useState(false);
-  const [isInterpreting, setIsInterpreting] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+Style direction:
+${style || "premium modern"}
 
-  const [usedEngine, setUsedEngine] = useState<string | null>(null);
-  const [statusText, setStatusText] = useState("");
-  const [fallbackMessageVisible, setFallbackMessageVisible] = useState(false);
+User revision request:
+${note || "Improve realism, lighting, and overall premium quality."}
 
-  const [shareLoading, setShareLoading] = useState(false);
-  const [downloadLoading, setDownloadLoading] = useState(false);
+${
+  hasReferenceImage
+    ? `
+Reference image instructions:
+- A second uploaded image is provided as a material / color / surface reference
+- Use the reference image to transfer material character, color palette, texture feeling, tile logic, stone feeling, wood tone, or surface identity
+- Apply the reference only to the area described in the user request
+- Do not redesign unrelated parts of the scene
+- Preserve scene realism and perspective while adapting the reference material
+`
+    : ""
+}
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: createId(),
-      role: "assistant",
-      kind: "normal",
-      content:
-        "Merhaba. Revize isteğini Türkçe yaz. İsteğini profesyonel şekilde yorumlayacağım. Belirtmediğin alanlarda mevcut ışık, kamera açısı, kadraj ve mekan kurgusunu koruyarak ilerleyeceğim.",
-    },
-  ]);
+Important rules:
+- do not redesign the whole project unless explicitly requested
+- do not break geometry
+- do not crop important scene content
+- avoid artificial looking textures
+- keep scale realistic
+- keep the final result polished and convincing
+`.trim();
+}
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const stepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+function detectEditIntent(note: string) {
+  const value = (note || "").toLowerCase();
 
-  const canInterpret = useMemo(
-    () => input.trim().length > 0 && !isInterpreting,
-    [input, isInterpreting]
-  );
+  const editKeywords = [
+    "revize",
+    "düzenle",
+    "değiştir",
+    "ekle",
+    "kaldır",
+    "ışık",
+    "malzeme",
+    "materyal",
+    "renk",
+    "doku",
+    "aksesuar",
+    "çiçek",
+    "spot",
+    "gerçekçi",
+    "iyileştir",
+    "aynı kalsın",
+    "bozmadan",
+    "preserve",
+    "keep",
+    "edit",
+    "revise",
+  ];
 
-  const canGenerate = useMemo(
-    () => !!file && !!interpreted && !isGenerating,
-    [file, interpreted, isGenerating]
-  );
+  const score = editKeywords.filter((k) => value.includes(k)).length;
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+  return {
+    isEditLike: score > 0,
+    score,
+  };
+}
 
-      if (stepIntervalRef.current) {
-        clearInterval(stepIntervalRef.current);
-      }
+function pickEngineOrder(params: { note: string; hasImage: boolean }): EngineName[] {
+  const { note, hasImage } = params;
+  const intent = detectEditIntent(note);
 
-      if (fallbackTimerRef.current) {
-        clearTimeout(fallbackTimerRef.current);
-      }
+  if (hasImage && intent.isEditLike) {
+    return ["openai-edit", "gemini", "openai-generate"];
+  }
+
+  if (hasImage) {
+    return ["openai-edit", "gemini", "openai-generate"];
+  }
+
+  return ["openai-generate", "gemini"];
+}
+
+async function fileToBase64(file: File) {
+  const bytes = await file.arrayBuffer();
+  return Buffer.from(bytes).toString("base64");
+}
+
+function normalizeImageList(images: unknown): string[] {
+  if (!Array.isArray(images)) return [];
+
+  return images
+    .filter((item): item is string => typeof item === "string" && item.length > 0)
+    .map((item) => {
+      if (item.startsWith("data:image")) return item;
+      return `data:image/png;base64,${item}`;
+    });
+}
+
+function getOpenAIImageModel() {
+  return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+}
+
+function getGeminiImageModel() {
+  return process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
+}
+
+async function ensureOkJson(response: Response) {
+  const text = await response.text();
+
+  let parsed: any = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!response.ok) {
+    const message =
+      parsed?.error?.message ||
+      parsed?.error ||
+      text ||
+      `HTTP ${response.status} hatası`;
+    throw new Error(message);
+  }
+
+  return parsed;
+}
+
+async function runOpenAIEdit(params: {
+  image: File;
+  prompt: string;
+  referenceImage?: File | null;
+}): Promise<EngineResult> {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "OPENAI_API_KEY tanımlı değil.",
+      };
+    }
+
+    const { image, prompt, referenceImage } = params;
+    const imageBase64 = await fileToBase64(image);
+    const imageDataUrl = `data:${image.type || "image/png"};base64,${imageBase64}`;
+
+    let referenceImageDataUrl: string | null = null;
+
+    if (referenceImage) {
+      const referenceBase64 = await fileToBase64(referenceImage);
+      referenceImageDataUrl = `data:${referenceImage.type || "image/png"};base64,${referenceBase64}`;
+    }
+
+    const response = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: getOpenAIImageModel(),
+        images: [
+          {
+            image_url: imageDataUrl,
+          },
+          ...(referenceImageDataUrl
+            ? [
+                {
+                  image_url: referenceImageDataUrl,
+                },
+              ]
+            : []),
+        ],
+        prompt,
+        size: "1536x1024",
+        quality: "high",
+        output_format: "png",
+        moderation: "auto",
+        input_fidelity: "high",
+        n: 1,
+      }),
+    });
+
+    const data = await ensureOkJson(response);
+
+    const images = normalizeImageList(
+      data?.data?.map((item: any) => item?.b64_json).filter(Boolean) ?? []
+    );
+
+    if (!images.length) {
+      return {
+        success: false,
+        error: "OpenAI edit boş sonuç döndürdü.",
+      };
+    }
+
+    return {
+      success: true,
+      images,
+      engine: "openai-edit",
     };
-  }, [previewUrl]);
-
-  function pushMessage(message: ChatMessage) {
-    setMessages((prev) => [...prev, message]);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "OpenAI edit hatası",
+    };
   }
+}
 
-  function clearLoadingTimers() {
-    if (stepIntervalRef.current) {
-      clearInterval(stepIntervalRef.current);
-      stepIntervalRef.current = null;
+async function runGemini(params: {
+  image: File;
+  prompt: string;
+  referenceImage?: File | null;
+}): Promise<EngineResult> {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "GEMINI_API_KEY tanımlı değil.",
+      };
     }
 
-    if (fallbackTimerRef.current) {
-      clearTimeout(fallbackTimerRef.current);
-      fallbackTimerRef.current = null;
+    const { image, prompt, referenceImage } = params;
+    const imageBase64 = await fileToBase64(image);
+
+    let referenceBase64: string | null = null;
+    let referenceMimeType: string | null = null;
+
+    if (referenceImage) {
+      referenceBase64 = await fileToBase64(referenceImage);
+      referenceMimeType = referenceImage.type || "image/png";
     }
-  }
 
-  function startGenerateStatusFlow() {
-    const steps = [
-      "Render analiz ediliyor...",
-      "Geometri ve açı eşleştiriliyor...",
-      "Auto Engine devreye alınıyor...",
-      "Revize komutları uygulanıyor...",
-      "Final görseller hazırlanıyor...",
-    ];
-
-    let stepIndex = 0;
-    setStatusText(steps[0]);
-
-    stepIntervalRef.current = setInterval(() => {
-      stepIndex = Math.min(stepIndex + 1, steps.length - 1);
-      setStatusText(steps[stepIndex]);
-    }, 1800);
-
-    fallbackTimerRef.current = setTimeout(() => {
-      setFallbackMessageVisible(true);
-      setStatusText(FALLBACK_MESSAGE);
-
-      pushMessage({
-        id: createId(),
-        role: "assistant",
-        kind: "normal",
-        content: FALLBACK_MESSAGE,
-      });
-    }, 9000);
-  }
-
-  async function parseJsonSafely(res: Response) {
-    const raw = await res.text();
-
-    try {
-      return JSON.parse(raw);
-    } catch {
-      throw new Error(
-        raw ? `JSON yerine şu döndü: ${raw.slice(0, 200)}` : "Sunucudan boş yanıt döndü."
-      );
-    }
-  }
-
-  async function dataUrlToFile(dataUrl: string, filename: string) {
-    const response = await fetch(dataUrl);
-    const blob = await response.blob();
-
-    return new File([blob], filename, {
-      type: blob.type || "image/png",
-    });
-  }
-
-  async function handleDownload() {
-    try {
-      if (!result) return;
-
-      setDownloadLoading(true);
-
-      const link = document.createElement("a");
-      link.href = result;
-      link.download = `tudesign-render-${Date.now()}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } finally {
-      setDownloadLoading(false);
-    }
-  }
-
-  async function handleShare() {
-    try {
-      if (!result) return;
-
-      setShareLoading(true);
-
-      const fileToShare = await dataUrlToFile(
-        result,
-        `tudesign-render-${Date.now()}.png`
-      );
-
-      if (navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
-        await navigator.share({
-          title: "tuDesign AI Render",
-          text: "tuDesign AI ile oluşturulan render çıktısı",
-          files: [fileToShare],
-        });
-        return;
-      }
-
-      const link = document.createElement("a");
-      link.href = result;
-      link.download = fileToShare.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Paylaşım hatası:", error);
-    } finally {
-      setShareLoading(false);
-    }
-  }
-
-  async function handleInterpret() {
-    const userText = input.trim();
-    if (!userText) return;
-
-    pushMessage({
-      id: createId(),
-      role: "user",
-      kind: "normal",
-      content: userText,
-    });
-
-    setInput("");
-    setResult(null);
-    setUsedEngine(null);
-    setStatusText("");
-    setFallbackMessageVisible(false);
-    setIsInterpreting(true);
-
-    try {
-      const res = await fetch("/api/interpret", {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        getGeminiImageModel()
+      )}:generateContent`,
+      {
         method: "POST",
         headers: {
+          "x-goog-api-key": apiKey,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          prompt: userText,
-          mode: "auto",
+          contents: [
+            {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: image.type || "image/png",
+                    data: imageBase64,
+                  },
+                },
+                ...(referenceBase64
+                  ? [
+                      {
+                        inlineData: {
+                          mimeType: referenceMimeType || "image/png",
+                          data: referenceBase64,
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.4,
+          },
         }),
-      });
-
-      const data = await parseJsonSafely(res);
-
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || "Yorumlama başarısız oldu.");
       }
+    );
 
-      const interpretedData: InterpretedResult = data.interpreted;
-      setInterpreted(interpretedData);
+    const data = await ensureOkJson(response);
 
-      pushMessage({
-        id: createId(),
-        role: "assistant",
-        kind: data?.needsClarification ? "question" : "interpretation",
-        content:
-          data?.assistantReply ||
-          "İsteğini yorumladım. Belirtmediğin alanları koruyarak revizeyi oluşturmaya hazırım.",
-      });
-    } catch (error: any) {
-      pushMessage({
-        id: createId(),
-        role: "assistant",
-        kind: "error",
-        content: error?.message || "Yorumlama sırasında bir hata oluştu.",
-      });
-    } finally {
-      setIsInterpreting(false);
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const images = normalizeImageList(
+      parts
+        .filter((part: any) => !!part?.inlineData?.data)
+        .map((part: any) => part.inlineData.data)
+    );
+
+    if (!images.length) {
+      const textPart = parts.find((part: any) => typeof part?.text === "string")?.text;
+      return {
+        success: false,
+        error:
+          textPart ||
+          "Gemini görsel üretmedi veya response içinde inlineData bulunamadı.",
+      };
     }
+
+    return {
+      success: true,
+      images,
+      engine: "gemini",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Gemini hatası",
+    };
   }
+}
 
-  async function handleGenerate() {
-    try {
-      if (!file) {
-        throw new Error("Önce bir görsel yüklemelisin.");
-      }
-
-      if (!interpreted) {
-        throw new Error("Önce revize isteğini yorumlatmalısın.");
-      }
-
-      setIsGenerating(true);
-      setResult(null);
-      setUsedEngine(null);
-      setFallbackMessageVisible(false);
-
-      clearLoadingTimers();
-      startGenerateStatusFlow();
-
-      pushMessage({
-        id: createId(),
-        role: "assistant",
-        kind: "normal",
-        content:
-          "İstediğin revizeyi oluşturmak için çalışıyorum. En uygun render motoru otomatik seçiliyor.",
-      });
-
-      const formData = new FormData();
-      formData.append("image", file);
-      formData.append("note", interpreted.summary_tr);
-      formData.append("prompt", interpreted.summary_tr);
-      formData.append("mode", "auto");
-
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await parseJsonSafely(res);
-
-      clearLoadingTimers();
-
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || "Render üretimi başarısız oldu.");
-      }
-
-      let finalImage: string | null = null;
-
-      if (typeof data?.image === "string" && data.image.length > 0) {
-        finalImage = data.image.startsWith("data:image")
-          ? data.image
-          : `data:image/png;base64,${data.image}`;
-      } else if (Array.isArray(data?.images) && data.images.length > 0) {
-        const firstImage = data.images[0];
-        if (typeof firstImage === "string" && firstImage.length > 0) {
-          finalImage = firstImage.startsWith("data:image")
-            ? firstImage
-            : `data:image/png;base64,${firstImage}`;
-        }
-      }
-
-      if (!finalImage) {
-        throw new Error("Üretim tamamlandı ama görsel dönmedi.");
-      }
-
-      setResult(finalImage);
-      setUsedEngine(data?.engine || data?.engineName || null);
-
-      if (data?.fallbackUsed) {
-        setFallbackMessageVisible(true);
-        setStatusText(FALLBACK_MESSAGE);
-
-        setTimeout(() => {
-          setStatusText("Render revizesi tamamlandı.");
-        }, 1400);
-      } else {
-        setStatusText("Render revizesi tamamlandı.");
-      }
-
-      pushMessage({
-        id: createId(),
-        role: "assistant",
-        kind: "success",
-        content: data?.engineName
-          ? `Revize hazır. ${data.engineName}.`
-          : data?.engine
-          ? `Revize hazır. ${formatEngineLabel(data.engine)}.`
-          : "Revize hazır. Auto Engine işlemi tamamladı.",
-      });
-    } catch (error: any) {
-      clearLoadingTimers();
-      setStatusText("");
-
-      pushMessage({
-        id: createId(),
-        role: "assistant",
-        kind: "error",
-        content: error?.message || "Üretim sırasında bir hata oluştu.",
-      });
-    } finally {
-      setIsGenerating(false);
+async function runOpenAIGenerate(params: {
+  prompt: string;
+}): Promise<EngineResult> {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "OPENAI_API_KEY tanımlı değil.",
+      };
     }
+
+    const { prompt } = params;
+
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: getOpenAIImageModel(),
+        prompt,
+        size: "1536x1024",
+        quality: "high",
+        output_format: "png",
+        moderation: "auto",
+        background: "auto",
+        n: 1,
+      }),
+    });
+
+    const data = await ensureOkJson(response);
+
+    const images = normalizeImageList(
+      data?.data?.map((item: any) => item?.b64_json).filter(Boolean) ?? []
+    );
+
+    if (!images.length) {
+      return {
+        success: false,
+        error: "OpenAI generate boş sonuç döndürdü.",
+      };
+    }
+
+    return {
+      success: true,
+      images,
+      engine: "openai-generate",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "OpenAI generate hatası",
+    };
   }
+}
 
-  function applySelectedFile(selected: File | null) {
-    if (!selected) return;
+async function runAutoEngine(params: {
+  image: File | null;
+  referenceImage?: File | null;
+  note: string;
+  style?: string;
+}): Promise<AutoEngineResult> {
+  const { image, referenceImage, note, style } = params;
 
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
+  const tried = pickEngineOrder({
+    note,
+    hasImage: !!image,
+  });
+
+  const prompt = buildRevisionPrompt(note, style, !!referenceImage);
+  const errors: { engine: EngineName; error: string }[] = [];
+
+  for (let i = 0; i < tried.length; i++) {
+    const engine = tried[i];
+    let result: EngineResult;
+
+    if (engine === "openai-edit") {
+      if (!image) {
+        errors.push({
+          engine,
+          error: "OpenAI edit için görsel gerekli.",
+        });
+        continue;
+      }
+
+      result = await runOpenAIEdit({
+        image,
+        prompt,
+        referenceImage,
+      });
+    } else if (engine === "gemini") {
+      if (!image) {
+        errors.push({
+          engine,
+          error: "Gemini image akışı için görsel gerekli.",
+        });
+        continue;
+      }
+
+      result = await runGemini({
+        image,
+        prompt,
+        referenceImage,
+      });
+    } else {
+      result = await runOpenAIGenerate({
+        prompt,
+      });
     }
 
-    setFile(selected);
-    const nextPreview = URL.createObjectURL(selected);
-    setPreviewUrl(nextPreview);
+    if (result.success) {
+      return {
+        ok: true,
+        images: normalizeImageList(result.images),
+        engine: result.engine,
+        tried,
+        fallbackUsed: i > 0,
+      };
+    }
 
-    pushMessage({
-      id: createId(),
-      role: "assistant",
-      kind: "normal",
-      content: `Görsel yüklendi: ${selected.name}`,
+    errors.push({
+      engine,
+      error: result.error,
     });
   }
 
-  function handleFileChange(selected: File | null) {
-    applySelectedFile(selected);
-  }
+  return {
+    ok: false,
+    tried,
+    errors,
+  };
+}
 
-  function handleOpenFilePicker() {
-    fileInputRef.current?.click();
-  }
+export async function POST(request: Request) {
+  try {
+    const formData = await request.formData();
 
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    setIsDragging(false);
+    const image = formData.get("image");
+    const referenceImage = formData.get("referenceImage");
+    const noteFromNote = String(formData.get("note") || "");
+    const noteFromPrompt = String(formData.get("prompt") || "");
+    const style = String(formData.get("style") || "premium modern");
 
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped) {
-      applySelectedFile(dropped);
+    const note = (noteFromNote || noteFromPrompt || "").trim();
+    const file = image instanceof File ? image : null;
+    const referenceFile = referenceImage instanceof File ? referenceImage : null;
+
+    if (!file && !note) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Görsel veya revize notu gerekli.",
+        },
+        { status: 400 }
+      );
     }
-  }
 
-  function handleResetAll() {
-    clearLoadingTimers();
+    const result = await runAutoEngine({
+      image: file,
+      referenceImage: referenceFile,
+      note,
+      style,
+    });
 
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Hiçbir render motoru başarılı sonuç üretemedi.",
+          tried: result.tried,
+          details: result.errors,
+        },
+        { status: 500 }
+      );
     }
 
-    setInput("");
-    setFile(null);
-    setPreviewUrl("");
-    setInterpreted(null);
-    setResult(null);
-    setUsedEngine(null);
-    setStatusText("");
-    setFallbackMessageVisible(false);
-    setIsDragging(false);
-    setMessages([
+    const firstImage = result.images[0] ?? null;
+
+    return NextResponse.json({
+      success: true,
+      image: firstImage,
+      images: result.images,
+      engine: result.engine,
+      engineName: getEngineDisplayName(result.engine),
+      fallbackUsed: result.fallbackUsed,
+      message: "Render revizesi tamamlandı.",
+    });
+  } catch (error) {
+    return NextResponse.json(
       {
-        id: createId(),
-        role: "assistant",
-        kind: "normal",
-        content:
-          "Yeni bir revize isteğiyle başlayabiliriz. Türkçe yaz, ben yorumlayayım. Belirtmediğin ışık, kamera, kadraj ve genel mekan kurgusunu koruyarak ilerlerim.",
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Bilinmeyen bir sunucu hatası oluştu.",
       },
-    ]);
+      { status: 500 }
+    );
   }
-
-  return (
-    <main
-      className="render-theme min-h-screen bg-[#09090b] text-white"
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-10%] h-[380px] w-[380px] rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute right-[-8%] top-[10%] h-[320px] w-[320px] rounded-full bg-violet-500/10 blur-3xl" />
-        <div className="absolute bottom-[-10%] left-[20%] h-[360px] w-[360px] rounded-full bg-cyan-500/10 blur-3xl" />
-      </div>
-
-      <div className="relative mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
-        <div className="mb-6 rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.35em] text-white/45">
-                tuDesign AI / Render Lab
-              </p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
-                Konuşmalı Render Revize Sistemi
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65 md:text-[15px]">
-                Revize istediğin alanları yorumlar, gerekirse soru sorar ve en uygun
-                üretim motorunu otomatik seçerek sonucu oluşturur.
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleResetAll}
-                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-white/85 transition hover:bg-white/10"
-              >
-                Yeni revize
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[430px_minmax(0,1fr)]">
-          <aside className="space-y-6">
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-              <div className="mb-4">
-                <p className="text-sm font-medium text-white">Akıllı motor yönlendirmesi</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Sistem, revize isteğinin yapısına göre en uygun motoru otomatik seçer.
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-                <p className="text-sm leading-6 text-white/75">
-                  Lokal revizelerde, materyal hassasiyetinde ve üretim kararlılığında
-                  uygun motor otomatik belirlenir. Seçim kullanıcıya gösterilmez,
-                  sonuçta hangi motorun çalıştığı konuşma akışında belirtilir.
-                </p>
-              </div>
-            </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-              <div className="mb-4">
-                <p className="text-sm font-medium text-white">Görsel yükleme</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  İstersen önce metni yaz, istersen görseli hemen bırak. Sistem iki
-                  akışta da çalışır.
-                </p>
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
-              />
-
-              <div
-                onClick={handleOpenFilePicker}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                className={[
-                  "group flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed px-6 text-center transition",
-                  isDragging
-                    ? "border-cyan-400 bg-cyan-400/10"
-                    : "border-white/15 bg-black/20 hover:border-white/30 hover:bg-white/[0.06]",
-                ].join(" ")}
-              >
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl text-white/70">
-                  ⬆
-                </div>
-
-                <p className="text-sm font-medium text-white">
-                  {file
-                    ? "Görseli değiştirmek için tıkla veya bırak"
-                    : "Görseli buraya sürükle bırak"}
-                </p>
-                <p className="mt-2 text-xs leading-5 text-white/45">
-                  PNG, JPG veya WEBP yükleyebilirsin
-                </p>
-              </div>
-
-              {previewUrl ? (
-                <div className="mt-4 overflow-hidden rounded-[24px] border border-white/10 bg-black/30">
-                  <img
-                    src={previewUrl}
-                    alt="Yüklenen görsel önizleme"
-                    className="h-auto w-full object-cover"
-                    draggable={false}
-                  />
-                </div>
-              ) : null}
-            </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-              <div className="mb-4">
-                <p className="text-sm font-medium text-white">Revize isteği</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Örnek: yalnızca duş alanı duvarını bordo tona çek, zemini koyu
-                  seramik yap, diğer tüm alanları koru.
-                </p>
-              </div>
-
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ne yapmak istediğini doğal şekilde yaz..."
-                className="min-h-[190px] w-full resize-none rounded-[24px] border border-white/10 bg-black/20 p-4 text-sm text-white outline-none placeholder:text-white/25"
-              />
-
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <button
-                  onClick={handleInterpret}
-                  disabled={!canInterpret}
-                  className="rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-medium text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isInterpreting ? "Yorumlanıyor..." : "İsteği yorumla"}
-                </button>
-
-                <button
-                  onClick={handleGenerate}
-                  disabled={!canGenerate}
-                  className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isGenerating ? "Üretiliyor..." : "Devam et ve üret"}
-                </button>
-              </div>
-
-              {statusText ? (
-                <div className="mt-4 rounded-[22px] border border-white/10 bg-black/20 p-4 text-sm text-white/75">
-                  {statusText}
-                </div>
-              ) : null}
-
-              {fallbackMessageVisible ? (
-                <div className="mt-4 rounded-[22px] border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-                  {FALLBACK_MESSAGE}
-                </div>
-              ) : null}
-            </section>
-
-            {interpreted ? (
-              <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <div className="mb-5">
-                  <p className="text-sm font-medium text-white">Revize özeti</p>
-                  <p className="mt-1 text-xs text-white/40">
-                    Sistem yalnızca istediğin alanlara odaklanarak çalışacak.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
-                    <p className="mb-2 text-[11px] uppercase tracking-[0.24em] text-white/35">
-                      Anlaşılan istek
-                    </p>
-                    <p className="text-sm leading-6 text-white/80">
-                      {interpreted.summary_tr}
-                    </p>
-                  </div>
-
-                  <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
-                    <p className="mb-3 text-[11px] uppercase tracking-[0.24em] text-white/35">
-                      Korunacak alanlar
-                    </p>
-
-                    <div className="flex flex-wrap gap-2">
-                      {interpreted.preserve.length > 0 ? (
-                        interpreted.preserve.map((item, i) => (
-                          <span
-                            key={i}
-                            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/75"
-                          >
-                            {item}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-sm text-white/50">
-                          Ek koruma notu bulunmuyor.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[22px] border border-white/10 bg-black/20 p-4">
-                    <p className="mb-3 text-[11px] uppercase tracking-[0.24em] text-white/35">
-                      Uygulanacak revizeler
-                    </p>
-
-                    <div className="space-y-2">
-                      {interpreted.changes.length > 0 ? (
-                        interpreted.changes.map((item, i) => (
-                          <div
-                            key={i}
-                            className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3"
-                          >
-                            <p className="text-sm leading-6 text-white/80">{item.value}</p>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-white/50">
-                          Genel iyileştirme odaklı bir revize algılandı.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {interpreted.missing_questions?.length > 0 ? (
-                    <div className="rounded-[22px] border border-amber-400/30 bg-amber-400/10 p-4">
-                      <p className="mb-3 text-sm font-medium text-amber-100">
-                        Netleştirilirse sonuç güçlenir
-                      </p>
-
-                      <div className="space-y-2">
-                        {interpreted.missing_questions.map((item, i) => (
-                          <div
-                            key={i}
-                            className="rounded-2xl border border-amber-300/20 bg-black/10 px-3 py-2 text-sm text-amber-50"
-                          >
-                            {item}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-          </aside>
-
-          <section className="space-y-6">
-            <section className="overflow-hidden rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-xl">
-              <div className="border-b border-white/10 px-5 py-4">
-                <p className="text-sm font-medium text-white">Konuşmalı akış</p>
-              </div>
-
-              <div className="max-h-[520px] space-y-4 overflow-y-auto p-5">
-                {messages.map((message) => {
-                  const isUser = message.role === "user";
-
-                  return (
-                    <div
-                      key={message.id}
-                      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={[
-                          "max-w-[86%] whitespace-pre-wrap rounded-[24px] border px-4 py-3 text-sm leading-6",
-                          isUser
-                            ? "border-white/10 bg-white text-black"
-                            : "border-white/10 bg-black/25 text-white/85",
-                          message.kind === "error"
-                            ? "border-red-400/30 bg-red-500/10 text-red-100"
-                            : "",
-                          message.kind === "success"
-                            ? "border-green-400/30 bg-green-500/10 text-green-100"
-                            : "",
-                          message.kind === "question"
-                            ? "border-amber-400/30 bg-amber-500/10 text-amber-100"
-                            : "",
-                        ].join(" ")}
-                      >
-                        {message.content}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {(isInterpreting || isGenerating) && (
-                  <div className="flex justify-start">
-                    <div className="rounded-[24px] border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/70">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-white/70" />
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-white/50 [animation-delay:120ms]" />
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-white/30 [animation-delay:240ms]" />
-                        <span className="ml-1">
-                          {isInterpreting
-                            ? "Revize talebin analiz ediliyor..."
-                            : statusText || "Auto Engine çalışıyor..."}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {result ? (
-              <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-white">Üretilen sonuç</p>
-                    <p className="mt-1 text-xs text-white/35">tek görsel</p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {usedEngine ? (
-                      <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">
-                        {formatEngineLabel(usedEngine)}
-                      </div>
-                    ) : null}
-
-                    <button
-                      onClick={handleDownload}
-                      disabled={downloadLoading}
-                      className="rounded-full border border-white/12 bg-white px-4 py-2 text-xs font-medium text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {downloadLoading ? "İndiriliyor..." : "İndir"}
-                    </button>
-
-                    <button
-                      onClick={handleShare}
-                      disabled={shareLoading}
-                      className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {shareLoading ? "Paylaşılıyor..." : "Paylaş"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-black/20">
-                  <img
-                    src={result}
-                    alt="Render sonucu"
-                    className="h-auto w-full object-cover"
-                    draggable={false}
-                  />
-                </div>
-              </section>
-            ) : null}
-          </section>
-        </div>
-      </div>
-    </main>
-  );
 }
