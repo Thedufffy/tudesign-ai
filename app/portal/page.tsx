@@ -56,24 +56,6 @@ const modules: {
   },
 ];
 
-const adminLinks = [
-  {
-    title: "Kullanıcı Yönetimi",
-    description: "Üyelik aç, düzenle ve kullanıcı durumlarını yönet.",
-    href: "/portal/admin/users",
-  },
-  {
-    title: "Kredi Yönetimi",
-    description: "Render ve fashion kredi tanımlamalarını buradan yap.",
-    href: "/portal/admin/credits",
-  },
-  {
-    title: "Yetki Yönetimi",
-    description: "Kullanıcılara modül erişimi ver veya kaldır.",
-    href: "/portal/admin/modules",
-  },
-];
-
 function hasModuleAccess(user: PortalUser | null, moduleKey: PortalModule) {
   if (!user) return false;
   if (user.role === "admin") return true;
@@ -169,30 +151,6 @@ export default function PortalDashboardPage() {
                 </div>
               ) : null}
             </section>
-
-            {isAdmin ? (
-              <section className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-                <p className="text-sm font-medium text-white">Admin Panel</p>
-                <p className="mt-2 text-sm leading-6 text-white/60">
-                  Üyelik, kredi ve yetki işlemleri için ayrı yönetim alanı.
-                </p>
-
-                <div className="mt-4 space-y-3">
-                  {adminLinks.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="block rounded-[22px] border border-white/10 bg-black/20 p-4 transition hover:border-white/20 hover:bg-white/[0.05]"
-                    >
-                      <p className="text-sm font-medium text-white">{item.title}</p>
-                      <p className="mt-2 text-xs leading-5 text-white/45">
-                        {item.description}
-                      </p>
-                    </Link>
-                  ))}
-                </div>
-              </section>
-            ) : null}
           </aside>
 
           <section>
