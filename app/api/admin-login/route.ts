@@ -24,18 +24,31 @@ export async function POST(req: Request) {
     const response = NextResponse.json({
       success: true,
       message: "Giriş başarılı",
+      user: {
+        email: "admin@tudesign.local",
+        role: "admin",
+        modules: ["render-lab", "fashion", "references", "uploads", "works"],
+      },
     });
 
-    response.cookies.set("tudesign_admin", "authenticated", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-    });
+    response.cookies.set(
+      "tudesign_admin",
+      JSON.stringify({
+        email: "admin@tudesign.local",
+        role: "admin",
+        modules: ["render-lab", "fashion", "references", "uploads", "works"],
+      }),
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 7,
+      }
+    );
 
     return response;
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { success: false, error: "Login hatası oluştu." },
       { status: 500 }

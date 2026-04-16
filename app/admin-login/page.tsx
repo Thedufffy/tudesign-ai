@@ -31,8 +31,12 @@ export default function AdminLoginPage() {
         throw new Error(data?.error || "Giriş başarısız.");
       }
 
-      localStorage.setItem("portal_user", JSON.stringify(data.user));
+      if (data?.user) {
+        localStorage.setItem("portal_user", JSON.stringify(data.user));
+      }
+
       router.push("/portal");
+      router.refresh();
     } catch (err: any) {
       setError(err?.message || "Giriş sırasında hata oluştu.");
     } finally {
