@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import AppSplash from "@/components/AppSplash";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://tudesign.tr"),
@@ -61,7 +62,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="tr">
-      <body>{children}</body>
+      <body>
+        <AppSplash>{children}</AppSplash>
+      </body>
     </html>
   );
 }
