@@ -48,6 +48,7 @@ export default function PortalLayout({
   const [user, setUser] = useState<PortalSessionUser | null>(null);
   const [ready, setReady] = useState(false);
 
+  // sağ klik kapatma
   useEffect(() => {
     const preventContextMenu = (e: MouseEvent) => {
       e.preventDefault();
@@ -59,6 +60,7 @@ export default function PortalLayout({
     };
   }, []);
 
+  // kullanıcı çekme
   useEffect(() => {
     const raw = localStorage.getItem("portal_user");
 
@@ -77,6 +79,7 @@ export default function PortalLayout({
     }
   }, [router]);
 
+  // yetki kontrol
   useEffect(() => {
     if (!user) return;
 
@@ -106,82 +109,92 @@ export default function PortalLayout({
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
-        <aside className="border-r border-white/10 bg-black/40 p-5">
-          <div className="mb-8">
-            <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
-              tuDesign AI
-            </p>
-            <h2 className="mt-3 text-2xl font-semibold">Portal</h2>
-            <p className="mt-2 text-sm text-white/45">
-              Merkezi kontrol paneli
-            </p>
-            <p className="mt-3 text-xs text-white/30">
-              Kullanıcı: {user.username}
-            </p>
-          </div>
+    <>
+      {/* 🔥 PWA bağlantıları */}
+      <head>
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta name="theme-color" content="#0a0a0a" />
+      </head>
 
-          <div className="space-y-3">
-            <NavItem
-              href="/portal"
-              label="Dashboard"
-              active={pathname === "/portal"}
-            />
+      <div className="min-h-screen bg-[#0a0a0a] text-white">
+        <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
+          <aside className="border-r border-white/10 bg-black/40 p-5">
+            <div className="mb-8">
+              <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
+                tuDesign AI
+              </p>
+              <h2 className="mt-3 text-2xl font-semibold">Portal</h2>
+              <p className="mt-2 text-sm text-white/45">
+                Merkezi kontrol paneli
+              </p>
+              <p className="mt-3 text-xs text-white/30">
+                Kullanıcı: {user.username}
+              </p>
+            </div>
 
-            {user.canAccessFashion ? (
+            <div className="space-y-3">
               <NavItem
-                href="/portal/fashion"
-                label="Fashion Studio"
-                active={pathname === "/portal/fashion"}
+                href="/portal"
+                label="Dashboard"
+                active={pathname === "/portal"}
               />
-            ) : null}
 
-            {user.canAccessRenderLab ? (
-              <NavItem
-                href="/portal/render-lab"
-                label="Render Lab"
-                active={pathname === "/portal/render-lab"}
-              />
-            ) : null}
+              {user.canAccessFashion && (
+                <NavItem
+                  href="/portal/fashion"
+                  label="Fashion Studio"
+                  active={pathname === "/portal/fashion"}
+                />
+              )}
 
-            {user.canAccessReferences ? (
-              <NavItem
-                href="/portal/references"
-                label="References"
-                active={pathname === "/portal/references"}
-              />
-            ) : null}
+              {user.canAccessRenderLab && (
+                <NavItem
+                  href="/portal/render-lab"
+                  label="Render Lab"
+                  active={pathname === "/portal/render-lab"}
+                />
+              )}
 
-            {user.canAccessWorks ? (
-              <NavItem
-                href="/portal/works"
-                label="Works"
-                active={pathname === "/portal/works"}
-              />
-            ) : null}
+              {user.canAccessReferences && (
+                <NavItem
+                  href="/portal/references"
+                  label="References"
+                  active={pathname === "/portal/references"}
+                />
+              )}
 
-            {user.canAccessUploads ? (
-              <NavItem
-                href="/portal/uploads"
-                label="Uploads"
-                active={pathname === "/portal/uploads"}
-              />
-            ) : null}
-          </div>
+              {user.canAccessWorks && (
+                <NavItem
+                  href="/portal/works"
+                  label="Works"
+                  active={pathname === "/portal/works"}
+                />
+              )}
 
-          <div className="mt-8 border-t border-white/10 pt-5">
-            <button
-              onClick={handleLogout}
-              className="w-full border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-white/70 transition hover:bg-white/[0.06] hover:text-white"
-            >
-              Logout
-            </button>
-          </div>
-        </aside>
+              {user.canAccessUploads && (
+                <NavItem
+                  href="/portal/uploads"
+                  label="Uploads"
+                  active={pathname === "/portal/uploads"}
+                />
+              )}
+            </div>
 
-        <div className="min-w-0">{children}</div>
+            <div className="mt-8 border-t border-white/10 pt-5">
+              <button
+                onClick={handleLogout}
+                className="w-full border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-white/70 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                Logout
+              </button>
+            </div>
+          </aside>
+
+          <div className="min-w-0">{children}</div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
