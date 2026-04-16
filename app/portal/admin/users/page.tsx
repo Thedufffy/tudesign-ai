@@ -138,10 +138,17 @@ export default function AdminUsersPage() {
       return;
     }
 
-    const nextModules =
-      role === "admin"
-        ? ["admin", "render-lab", "fashion", "references", "uploads", "works"]
-        : selectedModules.filter((item) => item !== "admin");
+    const nextModules: PortalModule[] =
+  role === "admin"
+    ? [
+        "admin",
+        "render-lab",
+        "fashion",
+        "references",
+        "uploads",
+        "works",
+      ]
+    : selectedModules.filter((item) => item !== "admin");
 
     const nextUser: AdminUserRow = {
       id: `user-${Date.now()}`,
