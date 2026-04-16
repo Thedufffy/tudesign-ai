@@ -27,15 +27,17 @@ export default function AdminLoginPage() {
 
       const data = await res.json();
 
-      if (!res.ok || !data.success) {
+      if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Giriş başarısız.");
       }
 
       if (data?.user) {
         localStorage.setItem("portal_user", JSON.stringify(data.user));
+      } else {
+        localStorage.removeItem("portal_user");
       }
 
-    
+      router.push("/portal");
       router.refresh();
     } catch (err: any) {
       setError(err?.message || "Giriş sırasında hata oluştu.");
@@ -77,6 +79,7 @@ export default function AdminLoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full rounded-[18px] border border-white/10 bg-black/20 p-3 text-sm text-white outline-none placeholder:text-white/25"
                 placeholder="Kullanıcı adı"
+                autoComplete="username"
               />
             </div>
 
@@ -88,6 +91,7 @@ export default function AdminLoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-[18px] border border-white/10 bg-black/20 p-3 text-sm text-white outline-none placeholder:text-white/25"
                 placeholder="Şifre"
+                autoComplete="current-password"
               />
             </div>
 

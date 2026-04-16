@@ -1,32 +1,42 @@
+export type PortalModule =
+  | "render-lab"
+  | "fashion"
+  | "references"
+  | "uploads"
+  | "works"
+  | "admin";
+
 export type PortalUser = {
   username: string;
   password: string;
-  isAdmin?: boolean;
-  canAccessRenderLab?: boolean;
-  canAccessFashion?: boolean;
-  canAccessReferences?: boolean;
-  canAccessUploads?: boolean;
-  canAccessWorks?: boolean;
+  role: "admin" | "client";
+  modules: PortalModule[];
 };
 
 export const portalUsers: PortalUser[] = [
   {
     username: "admin",
-    password: "1234",
-    isAdmin: true,
-    canAccessRenderLab: true,
-    canAccessFashion: true,
-    canAccessReferences: true,
-    canAccessUploads: true,
-    canAccessWorks: true,
+    password: "20832146",
+    role: "admin",
+    modules: [
+      "admin",
+      "render-lab",
+      "fashion",
+      "references",
+      "uploads",
+      "works",
+    ],
   },
   {
     username: "render",
     password: "1234",
-    canAccessRenderLab: true,
-    canAccessFashion: false,
-    canAccessReferences: false,
-    canAccessUploads: false,
-    canAccessWorks: false,
+    role: "client",
+    modules: ["render-lab"],
   },
 ];
+
+export function canAccessModule(user: PortalUser | null, moduleName: PortalModule) {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  return user.modules.includes(moduleName);
+}
