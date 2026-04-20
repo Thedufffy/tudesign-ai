@@ -277,7 +277,7 @@ export default function BoardLabPage() {
                   setBoardData(null);
                   setAnalysis(null);
                 }}
-                placeholder='Örn: "Fresh Scarfs"'
+                placeholder="Proje Adı"
                 className="w-full rounded-[20px] border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-white/25"
               />
 
@@ -286,7 +286,7 @@ export default function BoardLabPage() {
                 <span className="text-white/90">
                   {projectName.trim().length >= 3
                     ? `${projectName.trim()} / Detay Paftası`
-                    : "Proje adı / Detay Paftası"}
+                    : "Proje Adı / Detay Paftası"}
                 </span>
               </div>
             </section>

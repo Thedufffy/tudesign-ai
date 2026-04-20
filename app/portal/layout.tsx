@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type PortalModule =
   | "render-lab"
+  | "board-lab"
   | "fashion"
   | "references"
   | "uploads"
@@ -94,6 +95,8 @@ export default function PortalLayout({
     const blocked =
       (pathname === "/portal/render-lab" &&
         !hasModuleAccess(user, "render-lab")) ||
+      (pathname === "/portal/board-lab" &&
+        !hasModuleAccess(user, "board-lab")) ||
       (pathname === "/portal/fashion" &&
         !hasModuleAccess(user, "fashion")) ||
       (pathname === "/portal/references" &&
@@ -154,6 +157,14 @@ export default function PortalLayout({
                 href="/portal/render-lab"
                 label="Render Lab"
                 active={pathname === "/portal/render-lab"}
+              />
+            ) : null}
+
+            {hasModuleAccess(user, "board-lab") ? (
+              <NavItem
+                href="/portal/board-lab"
+                label="Board Lab"
+                active={pathname === "/portal/board-lab"}
               />
             ) : null}
 
