@@ -41,13 +41,9 @@ Project title: ${projectTitle}
   try {
     const response = await openai.images.edit({
       model: "gpt-image-1",
-      images: [{ image_url: imageDataUrl }],
+      image: imageDataUrl,
       prompt,
-      input_fidelity: "high",
-      quality: "high",
       size: "1536x1024",
-      output_format: "png",
-      moderation: "auto",
     });
 
     const imageBase64 = response.data?.[0]?.b64_json;
