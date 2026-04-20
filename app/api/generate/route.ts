@@ -1,3 +1,5 @@
+// app/api/generate/route.ts
+
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -38,7 +40,98 @@ function getEngineDisplayName(engine: EngineName) {
   return "Auto Engine / Image Generation";
 }
 
-function buildRevisionPrompt(note: string, style?: string) {
+function parseReferenceFeatures(raw: FormDataEntryValue | null): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (item): item is string => typeof item === "string" && item.trim().length > 0
+    );
+  } catch {
+    return [];
+  }
+}
+
+function buildReferenceGuidance(params: {
+  hasReferenceImage: boolean;
+  referenceFeatures: string[];
+  referenceTargetArea?: string;
+  referenceExtraNote?: string;
+}) {
+  const {
+    hasReferenceImage,
+    referenceFeatures,
+    referenceTargetArea,
+    referenceExtraNote,
+  } = params;
+
+  if (!hasReferenceImage) return "";
+
+  const lines: string[] = [
+    "Reference image usage rules:",
+    "- the FIRST image is the main scene to revise",
+    "- the SECOND image is a material / color / texture / style reference",
+    "- use the second image only as reference guidance",
+    "- do not copy unrelated objects or composition from the reference image",
+    "- do not replace the whole scene with the reference image",
+  ];
+
+  if (referenceFeatures.length > 0) {
+    lines.push(
+      `- focus especially on these reference attributes: ${referenceFeatures.join(
+        ", "
+      )}`
+    );
+  } else {
+    lines.push(
+      "- infer the most relevant material, color, texture, finish, or style cues from the reference image"
+    );
+  }
+
+  if (referenceTargetArea?.trim()) {
+    lines.push(
+      `- apply the reference effect only to this target area when possible: ${referenceTargetArea.trim()}`
+    );
+  } else {
+    lines.push("- apply the reference only where the user explicitly requested");
+  }
+
+  if (referenceExtraNote?.trim()) {
+    lines.push(`- extra guidance: ${referenceExtraNote.trim()}`);
+  }
+
+  lines.push("- preserve the rest of the scene unless explicitly changed");
+
+  return lines.join("\n");
+}
+
+function buildRevisionPrompt(params: {
+  note: string;
+  style?: string;
+  hasReferenceImage?: boolean;
+  referenceFeatures?: string[];
+  referenceTargetArea?: string;
+  referenceExtraNote?: string;
+}) {
+  const {
+    note,
+    style,
+    hasReferenceImage,
+    referenceFeatures = [],
+    referenceTargetArea,
+    referenceExtraNote,
+  } = params;
+
+  const referenceGuidance = buildReferenceGuidance({
+    hasReferenceImage: !!hasReferenceImage,
+    referenceFeatures,
+    referenceTargetArea,
+    referenceExtraNote,
+  });
+
   return `
 You are a premium architectural render revision system.
 
@@ -63,6 +156,8 @@ ${style || "premium modern"}
 
 User revision request:
 ${note || "Improve realism, lighting, and overall premium quality."}
+
+${referenceGuidance}
 
 Important rules:
 - do not redesign the whole project unless explicitly requested
@@ -99,6 +194,16 @@ function detectEditIntent(note: string) {
     "keep",
     "edit",
     "revise",
+    "reference",
+    "referans",
+    "duvar",
+    "zemin",
+    "seramik",
+    "çini",
+    "mermer",
+    "kapı",
+    "ahşap",
+    "tezgah",
   ];
 
   const score = editKeywords.filter((k) => value.includes(k)).length;
@@ -109,11 +214,15 @@ function detectEditIntent(note: string) {
   };
 }
 
-function pickEngineOrder(params: { note: string; hasImage: boolean }): EngineName[] {
-  const { note, hasImage } = params;
+function pickEngineOrder(params: {
+  note: string;
+  hasImage: boolean;
+  hasReferenceImage: boolean;
+}): EngineName[] {
+  const { note, hasImage, hasReferenceImage } = params;
   const intent = detectEditIntent(note);
 
-  if (hasImage && intent.isEditLike) {
+  if (hasImage && (intent.isEditLike || hasReferenceImage)) {
     return ["openai-edit", "gemini", "openai-generate"];
   }
 
@@ -121,12 +230,16 @@ function pickEngineOrder(params: { note: string; hasImage: boolean }): EngineNam
     return ["openai-edit", "gemini", "openai-generate"];
   }
 
-  return ["openai-generate", "gemini"];
+  return ["openai-generate"];
 }
 
 async function fileToBase64(file: File) {
   const bytes = await file.arrayBuffer();
   return Buffer.from(bytes).toString("base64");
+}
+
+function toDataUrl(file: File, base64: string) {
+  return `data:${file.type || "image/jpeg"};base64,${base64}`;
 }
 
 function normalizeImageList(images: unknown): string[] {
@@ -172,10 +285,12 @@ async function ensureOkJson(response: Response) {
 
 async function runOpenAIEdit(params: {
   image: File;
+  referenceImage?: File | null;
   prompt: string;
 }): Promise<EngineResult> {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
+
     if (!apiKey) {
       return {
         success: false,
@@ -183,9 +298,21 @@ async function runOpenAIEdit(params: {
       };
     }
 
-    const { image, prompt } = params;
-    const imageBase64 = await fileToBase64(image);
-    const imageDataUrl = `data:${image.type || "image/png"};base64,${imageBase64}`;
+    const { image, referenceImage, prompt } = params;
+
+    const mainBase64 = await fileToBase64(image);
+    const images: Array<{ image_url: string }> = [
+      {
+        image_url: toDataUrl(image, mainBase64),
+      },
+    ];
+
+    if (referenceImage) {
+      const referenceBase64 = await fileToBase64(referenceImage);
+      images.push({
+        image_url: toDataUrl(referenceImage, referenceBase64),
+      });
+    }
 
     const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
@@ -195,11 +322,7 @@ async function runOpenAIEdit(params: {
       },
       body: JSON.stringify({
         model: getOpenAIImageModel(),
-        images: [
-          {
-            image_url: imageDataUrl,
-          },
-        ],
+        images,
         prompt,
         size: "1536x1024",
         quality: "high",
@@ -212,11 +335,11 @@ async function runOpenAIEdit(params: {
 
     const data = await ensureOkJson(response);
 
-    const images = normalizeImageList(
+    const resultImages = normalizeImageList(
       data?.data?.map((item: any) => item?.b64_json).filter(Boolean) ?? []
     );
 
-    if (!images.length) {
+    if (!resultImages.length) {
       return {
         success: false,
         error: "OpenAI edit boş sonuç döndürdü.",
@@ -225,7 +348,7 @@ async function runOpenAIEdit(params: {
 
     return {
       success: true,
-      images,
+      images: resultImages,
       engine: "openai-edit",
     };
   } catch (error) {
@@ -238,10 +361,12 @@ async function runOpenAIEdit(params: {
 
 async function runGemini(params: {
   image: File;
+  referenceImage?: File | null;
   prompt: string;
 }): Promise<EngineResult> {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
+
     if (!apiKey) {
       return {
         success: false,
@@ -249,8 +374,32 @@ async function runGemini(params: {
       };
     }
 
-    const { image, prompt } = params;
-    const imageBase64 = await fileToBase64(image);
+    const { image, referenceImage, prompt } = params;
+
+    const mainBase64 = await fileToBase64(image);
+
+    const parts: any[] = [
+      {
+        inlineData: {
+          mimeType: image.type || "image/jpeg",
+          data: mainBase64,
+        },
+      },
+    ];
+
+    if (referenceImage) {
+      const referenceBase64 = await fileToBase64(referenceImage);
+      parts.push({
+        inlineData: {
+          mimeType: referenceImage.type || "image/jpeg",
+          data: referenceBase64,
+        },
+      });
+    }
+
+    parts.push({
+      text: prompt,
+    });
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -265,17 +414,8 @@ async function runGemini(params: {
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: image.type || "image/png",
-                    data: imageBase64,
-                  },
-                },
-                {
-                  text: prompt,
-                },
-              ],
+              role: "user",
+              parts,
             },
           ],
           generationConfig: {
@@ -287,15 +427,18 @@ async function runGemini(params: {
 
     const data = await ensureOkJson(response);
 
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const responseParts = data?.candidates?.[0]?.content?.parts ?? [];
     const images = normalizeImageList(
-      parts
+      responseParts
         .filter((part: any) => !!part?.inlineData?.data)
         .map((part: any) => part.inlineData.data)
     );
 
     if (!images.length) {
-      const textPart = parts.find((part: any) => typeof part?.text === "string")?.text;
+      const textPart = responseParts.find(
+        (part: any) => typeof part?.text === "string"
+      )?.text;
+
       return {
         success: false,
         error:
@@ -322,6 +465,7 @@ async function runOpenAIGenerate(params: {
 }): Promise<EngineResult> {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
+
     if (!apiKey) {
       return {
         success: false,
@@ -377,17 +521,38 @@ async function runOpenAIGenerate(params: {
 
 async function runAutoEngine(params: {
   image: File | null;
+  referenceImage: File | null;
   note: string;
   style?: string;
+  referenceFeatures: string[];
+  referenceTargetArea?: string;
+  referenceExtraNote?: string;
 }): Promise<AutoEngineResult> {
-  const { image, note, style } = params;
+  const {
+    image,
+    referenceImage,
+    note,
+    style,
+    referenceFeatures,
+    referenceTargetArea,
+    referenceExtraNote,
+  } = params;
 
   const tried = pickEngineOrder({
     note,
     hasImage: !!image,
+    hasReferenceImage: !!referenceImage,
   });
 
-  const prompt = buildRevisionPrompt(note, style);
+  const prompt = buildRevisionPrompt({
+    note,
+    style,
+    hasReferenceImage: !!referenceImage,
+    referenceFeatures,
+    referenceTargetArea,
+    referenceExtraNote,
+  });
+
   const errors: { engine: EngineName; error: string }[] = [];
 
   for (let i = 0; i < tried.length; i++) {
@@ -405,6 +570,7 @@ async function runAutoEngine(params: {
 
       result = await runOpenAIEdit({
         image,
+        referenceImage,
         prompt,
       });
     } else if (engine === "gemini") {
@@ -418,6 +584,7 @@ async function runAutoEngine(params: {
 
       result = await runGemini({
         image,
+        referenceImage,
         prompt,
       });
     } else {
@@ -454,12 +621,20 @@ export async function POST(request: Request) {
     const formData = await request.formData();
 
     const image = formData.get("image");
+    const referenceImage = formData.get("referenceImage");
     const noteFromNote = String(formData.get("note") || "");
     const noteFromPrompt = String(formData.get("prompt") || "");
     const style = String(formData.get("style") || "premium modern");
 
+    const referenceFeatures = parseReferenceFeatures(
+      formData.get("referenceFeatures")
+    );
+    const referenceTargetArea = String(formData.get("referenceTargetArea") || "").trim();
+    const referenceExtraNote = String(formData.get("referenceExtraNote") || "").trim();
+
     const note = (noteFromNote || noteFromPrompt || "").trim();
     const file = image instanceof File ? image : null;
+    const referenceFile = referenceImage instanceof File ? referenceImage : null;
 
     if (!file && !note) {
       return NextResponse.json(
@@ -473,8 +648,12 @@ export async function POST(request: Request) {
 
     const result = await runAutoEngine({
       image: file,
+      referenceImage: referenceFile,
       note,
       style,
+      referenceFeatures,
+      referenceTargetArea,
+      referenceExtraNote,
     });
 
     if (!result.ok) {
@@ -498,6 +677,10 @@ export async function POST(request: Request) {
       engine: result.engine,
       engineName: getEngineDisplayName(result.engine),
       fallbackUsed: result.fallbackUsed,
+      referenceImageUsed: !!referenceFile,
+      referenceFeaturesUsed: referenceFeatures,
+      referenceTargetArea,
+      referenceExtraNote,
       message: "Render revizesi tamamlandı.",
     });
   } catch (error) {
