@@ -81,8 +81,9 @@ async function buildBoardData(params: {
   projectTitle: string;
   mainImage: string;
   analysis: BoardLabAnalysis;
+  imageFile: File;
 }): Promise<BoardLabGenerateResponse> {
-  const { projectTitle, mainImage, analysis } = params;
+  const { projectTitle, mainImage, analysis, imageFile } = params;
   const fallback = fallbackAnalysis(projectTitle);
 
   let detailImages: string[] = [];
@@ -102,9 +103,9 @@ async function buildBoardData(params: {
   // ✅ SKETCH (kritik: fallback safe)
   try {
     sketchImage = await generateBoardLabSketch({
-      imageDataUrl: mainImage,
-      projectTitle,
-    });
+  imageFile,
+  projectTitle,
+});
   } catch (error) {
     console.error("sketch error:", error);
   }
@@ -184,10 +185,11 @@ export async function POST(request: Request) {
     );
 
     const boardData = await buildBoardData({
-      projectTitle,
-      mainImage,
-      analysis,
-    });
+  projectTitle,
+  mainImage,
+  analysis,
+  imageFile: file,
+});
 
     return NextResponse.json({
       success: true,

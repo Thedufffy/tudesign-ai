@@ -1,16 +1,17 @@
 // lib/board-lab/sketch.ts
 
 import OpenAI from "openai";
+import { toFile } from "openai/uploads";
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
 export async function generateBoardLabSketch(params: {
-  imageDataUrl: string;
+  imageFile: File;
   projectTitle: string;
 }): Promise<string | null> {
-  const { imageDataUrl, projectTitle } = params;
+  const { imageFile, projectTitle } = params;
 
   if (!openai) {
     return null;
@@ -39,9 +40,17 @@ Project title: ${projectTitle}
 `;
 
   try {
+    const uploadableImage = await toFile(
+      await imageFile.arrayBuffer(),
+      imageFile.name || "board-lab-source.png",
+      {
+        type: imageFile.type || "image/png",
+      }
+    );
+
     const response = await openai.images.edit({
       model: "gpt-image-1",
-      image: imageDataUrl,
+      image: uploadableImage,
       prompt,
       size: "1536x1024",
     });
