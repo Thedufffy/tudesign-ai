@@ -1,247 +1,129 @@
 // app/api/board-lab/analyze/route.ts
 
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+import type { BoardLabAnalysis } from "@/lib/board-lab/board-types";
+import {
+  fileToDataUrl,
+  safeProjectTitle,
+  normalizeStringArray,
+  normalizeColorPalette,
+  fallbackAnalysis,
+} from "@/lib/board-lab/board-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type BoardLabAnalysis = {
-  projectTitle: string;
-  spaceType: string;
-  conceptText: string;
-  functionText: string[];
-  materialPalette: string[];
-  colorPalette: string[];
-  detailNotes: string[];
-};
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
-function safeProjectTitle(value: string) {
-  const trimmed = value.trim();
-  if (trimmed.length >= 3) return trimmed;
-  return "Proje";
-}
+function sanitizeAnalysis(raw: any, projectTitle: string): BoardLabAnalysis {
+  const fallback = fallbackAnalysis(projectTitle);
 
-async function fileToDataUrl(file: File) {
-  const arrayBuffer = await file.arrayBuffer();
-  const base64 = Buffer.from(arrayBuffer).toString("base64");
-  return `data:${file.type || "image/jpeg"};base64,${base64}`;
-}
-
-function normalizeStringArray(value: unknown, fallback: string[] = []) {
-  if (!Array.isArray(value)) return fallback;
-
-  const arr = value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  return arr.length ? arr : fallback;
-}
-
-function normalizeColorPalette(value: unknown) {
-  const fallback = ["#d8d0c5", "#bda98d", "#8f7a5f", "#e8e0d2", "#6d6254"];
-
-  if (!Array.isArray(value)) return fallback;
-
-  const colors = value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter((item) => /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(item));
-
-  return colors.length ? colors.slice(0, 5) : fallback;
-}
-
-function fallbackAnalysis(projectTitle: string): BoardLabAnalysis {
   return {
     projectTitle,
-    spaceType: "interior",
+    spaceType:
+      typeof raw?.spaceType === "string" && raw.spaceType.trim()
+        ? raw.spaceType.trim()
+        : fallback.spaceType,
     conceptText:
-      "Bu pafta, yüklenen mahal görselinin mevcut kompozisyonu korunarak detay odaklı bir sunum diline aktarılmış halidir. Mekanın ana malzeme karakteri, renk dengesi ve genel atmosferi analiz edilerek pafta kurgusuna dönüştürülmüştür.",
-    functionText: [
-      "Ana mahal görseli korunmuştur",
-      "Sunum paftası düzenine uyarlanmıştır",
-      "Malzeme ve renk dili özetlenmiştir",
-      "Detay odaklı sunum kurgusu oluşturulmuştur",
-    ],
-    materialPalette: ["Mermer", "Ahşap", "Duvar", "Zemin"],
-    colorPalette: ["#d8d0c5", "#bda98d", "#8f7a5f", "#e8e0d2", "#6d6254"],
-    detailNotes: [
-      "Ana görsel paftaya doğrudan yerleştirilmiştir",
-      "Yakın plan detay alanları otomatik hazırlanacaktır",
-      "Malzeme ve ton karakteri sunum dili için analiz edilmiştir",
-    ],
+      typeof raw?.conceptText === "string" && raw.conceptText.trim()
+        ? raw.conceptText.trim()
+        : fallback.conceptText,
+    functionText: normalizeStringArray(
+      raw?.functionText,
+      fallback.functionText
+    ).slice(0, 6),
+    materialPalette: normalizeStringArray(
+      raw?.materialPalette,
+      fallback.materialPalette
+    ).slice(0, 8),
+    colorPalette: normalizeColorPalette(raw?.colorPalette),
+    detailNotes: normalizeStringArray(
+      raw?.detailNotes,
+      fallback.detailNotes
+    ).slice(0, 6),
   };
 }
 
 async function analyzeWithOpenAI(params: {
-  file: File;
+  imageDataUrl: string;
   projectTitle: string;
 }): Promise<BoardLabAnalysis> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return fallbackAnalysis(params.projectTitle);
-  }
+  const { imageDataUrl, projectTitle } = params;
 
-  const imageDataUrl = await fileToDataUrl(params.file);
+  if (!openai) {
+    return fallbackAnalysis(projectTitle);
+  }
 
   const prompt = `
-You are analyzing a single uploaded interior or architectural space image for a presentation board system.
+Sen mimari sunum paftası hazırlığı için çalışan bir analiz sistemisin.
 
-Your task:
-Return a strict JSON object with these exact keys:
-- projectTitle: string
-- spaceType: string
-- conceptText: string
-- functionText: string[]
-- materialPalette: string[]
-- colorPalette: string[]
-- detailNotes: string[]
+Görev:
+Yüklenen iç mekan / mimari görseli analiz et ve aşağıdaki yapıda SADECE geçerli JSON döndür.
 
-Rules:
-- The image itself must be preserved conceptually. We are not redesigning the project.
-- Write concise, professional Turkish output.
-- Infer likely material names from what is visible.
-- colorPalette must contain 5 HEX colors.
-- functionText should contain 3 to 5 short bullet-style strings.
-- materialPalette should contain 4 to 6 short material names.
-- detailNotes should contain 3 to 5 short presentation/detail notes.
-- spaceType should be one of: interior, exterior, unknown.
-- projectTitle must be exactly "${params.projectTitle}".
+Kurallar:
+- JSON dışında hiçbir şey yazma
+- Türkçe yaz
+- Kısa ama profesyonel ol
+- Uydurma marka/model verme
+- Görselde kesin olmayan şeyi aşırı iddialı yazma
+- Renk paletinde mümkünse hex renkler kullan
+- functionText ve detailNotes maddeleri kısa olsun
+- materialPalette malzeme başlıkları şeklinde olsun
 
-Focus on:
-- visible space type
-- material language
-- overall concept
-- presentation-board friendly notes
+İstenen JSON formatı:
+{
+  "projectTitle": "${projectTitle}",
+  "spaceType": "salon | mutfak | banyo | yatak odası | mağaza | ofis | restoran | unknown",
+  "conceptText": "2-4 cümlelik profesyonel analiz",
+  "functionText": ["madde 1", "madde 2", "madde 3"],
+  "materialPalette": ["Malzeme 1", "Malzeme 2", "Malzeme 3"],
+  "colorPalette": ["#xxxxxx", "#xxxxxx", "#xxxxxx", "#xxxxxx", "#xxxxxx"],
+  "detailNotes": ["not 1", "not 2", "not 3"]
+}
 
-Return JSON only.
-`.trim();
+Analizde şunlara odaklan:
+- mekan türü
+- genel tasarım dili
+- malzeme etkisi
+- renk dengesi
+- sunumda öne çıkarılabilecek detay noktaları
+`;
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_ANALYZE_MODEL || "gpt-4.1-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: prompt,
-            },
-            {
-              type: "input_image",
-              image_url: imageDataUrl,
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "board_lab_analysis",
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              projectTitle: { type: "string" },
-              spaceType: { type: "string" },
-              conceptText: { type: "string" },
-              functionText: {
-                type: "array",
-                items: { type: "string" },
-              },
-              materialPalette: {
-                type: "array",
-                items: { type: "string" },
-              },
-              colorPalette: {
-                type: "array",
-                items: { type: "string" },
-              },
-              detailNotes: {
-                type: "array",
-                items: { type: "string" },
-              },
-            },
-            required: [
-              "projectTitle",
-              "spaceType",
-              "conceptText",
-              "functionText",
-              "materialPalette",
-              "colorPalette",
-              "detailNotes",
-            ],
+  const response = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: prompt,
           },
-        },
+          {
+            type: "input_image",
+            image_url: imageDataUrl,
+            detail: "high",
+          },
+        ],
       },
-    }),
+    ],
   });
 
-  const rawText = await response.text();
+  const text = response.output_text?.trim();
 
-  let parsed: any = null;
+  if (!text) {
+    return fallbackAnalysis(projectTitle);
+  }
+
   try {
-    parsed = rawText ? JSON.parse(rawText) : null;
+    const parsed = JSON.parse(text);
+    return sanitizeAnalysis(parsed, projectTitle);
   } catch {
-    throw new Error(rawText || "OpenAI analyze yanıtı parse edilemedi.");
+    return fallbackAnalysis(projectTitle);
   }
-
-  if (!response.ok) {
-    throw new Error(
-      parsed?.error?.message ||
-        parsed?.error ||
-        rawText ||
-        `HTTP ${response.status} hatası`
-    );
-  }
-
-  const contentText =
-    parsed?.output?.[0]?.content?.find((item: any) => item?.type === "output_text")
-      ?.text ||
-    parsed?.output_text ||
-    null;
-
-  if (!contentText || typeof contentText !== "string") {
-    return fallbackAnalysis(params.projectTitle);
-  }
-
-  let contentJson: any = null;
-  try {
-    contentJson = JSON.parse(contentText);
-  } catch {
-    return fallbackAnalysis(params.projectTitle);
-  }
-
-  return {
-    projectTitle: params.projectTitle,
-    spaceType:
-      typeof contentJson?.spaceType === "string"
-        ? contentJson.spaceType
-        : "unknown",
-    conceptText:
-      typeof contentJson?.conceptText === "string" && contentJson.conceptText.trim()
-        ? contentJson.conceptText.trim()
-        : fallbackAnalysis(params.projectTitle).conceptText,
-    functionText: normalizeStringArray(
-      contentJson?.functionText,
-      fallbackAnalysis(params.projectTitle).functionText
-    ).slice(0, 5),
-    materialPalette: normalizeStringArray(
-      contentJson?.materialPalette,
-      fallbackAnalysis(params.projectTitle).materialPalette
-    ).slice(0, 6),
-    colorPalette: normalizeColorPalette(contentJson?.colorPalette),
-    detailNotes: normalizeStringArray(
-      contentJson?.detailNotes,
-      fallbackAnalysis(params.projectTitle).detailNotes
-    ).slice(0, 5),
-  };
 }
 
 export async function POST(request: Request) {
@@ -264,10 +146,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const analysis = await analyzeWithOpenAI({
-      file,
-      projectTitle,
-    });
+    if (!file.type.startsWith("image/")) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Yüklenen dosya bir görsel olmalı.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const imageDataUrl = await fileToDataUrl(file);
+
+    let analysis: BoardLabAnalysis;
+
+    try {
+      analysis = await analyzeWithOpenAI({
+        imageDataUrl,
+        projectTitle,
+      });
+    } catch (aiError) {
+      console.error("board-lab analyze ai error:", aiError);
+      analysis = fallbackAnalysis(projectTitle);
+    }
 
     return NextResponse.json({
       success: true,
@@ -278,10 +179,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        success: true,
-        analysis: fallbackAnalysis("Proje"),
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Görsel analizi sırasında bilinmeyen bir hata oluştu.",
       },
-      { status: 200 }
+      { status: 500 }
     );
   }
 }

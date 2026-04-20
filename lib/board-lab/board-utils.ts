@@ -1,5 +1,7 @@
 // lib/board-lab/board-utils.ts
 
+import type { BoardLabAnalysis } from "@/lib/board-lab/board-types";
+
 export function safeProjectTitle(value: string) {
   const trimmed = value.trim();
   if (trimmed.length >= 3) return trimmed;
@@ -31,19 +33,17 @@ export function normalizeColorPalette(value: unknown) {
   const colors = value
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
-    .filter((item) =>
-      /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(item)
-    );
+    .filter((item) => /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(item));
 
   return colors.length ? colors.slice(0, 5) : fallback;
 }
 
-export function fallbackAnalysis(projectTitle: string) {
+export function fallbackAnalysis(projectTitle: string): BoardLabAnalysis {
   return {
     projectTitle,
     spaceType: "interior",
     conceptText:
-      "Bu pafta, yüklenen mahal görselinin mevcut kompozisyonu korunarak detay odaklı bir sunum diline aktarılmış halidir.",
+      "Bu pafta, yüklenen mahal görselinin mevcut kompozisyonu korunarak detay odaklı ve daha rafine bir sunum diline aktarılmış halidir.",
     functionText: [
       "Ana mahal görseli korunmuştur",
       "Sunum paftasına dönüştürülmüştür",

@@ -10,17 +10,25 @@ export type BoardLabAnalysis = {
   detailNotes: string[];
 };
 
+export type BoardLabMeta = {
+  layoutStyle: string;
+  imageMode: string;
+  generatedBy: string;
+};
+
 export type BoardLabGenerateResponse = {
   projectTitle: string;
   sheetTitle: string;
   mainImage: string;
   detailImages: string[];
+  sketchImage?: string;
   conceptText: string;
   functionText: string[];
   detailNotes: string[];
   materialPalette: string[];
   colorPalette: string[];
   spaceType: string;
+  meta?: BoardLabMeta;
 };
 
 export type BoardLabAnalyzeApiResponse = {
