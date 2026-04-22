@@ -1,229 +1,364 @@
-import { promises as fs } from "fs";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
+import crypto from "node:crypto";
 
-export type FashionUserRecord = {
+export type FashionUser = {
+  id: string;
   email: string;
+  name: string;
   password?: string;
-  credits: number;
-
-  // legacy / admin uyumluluğu
-  name?: string;
   company?: string;
-  isActive?: boolean;
-
-  // yeni alanlar
-  active?: boolean;
-  role?: "admin" | "client";
-  companyName?: string;
-
-  generatedCount?: number;
-  generationLogs?: Array<{
-    createdAt: string;
-    categoryCount: number;
-    country?: string;
-    prompt?: string;
-  }>;
+  role: "admin" | "client";
+  modules: string[];
+  credits: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastGeneratedAt?: string;
 };
 
-type FashionStoreShape = {
-  users: FashionUserRecord[];
+export type FashionGenerationLog = {
+  id: string;
+  userEmail: string;
+  createdAt: string;
+  creditsUsed: number;
+  resultCount: number;
+  preset?: string;
+  locale?: string;
+  country?: string;
+  prompt: string;
 };
 
-const STORE_DIR = path.join(process.cwd(), "data");
-const STORE_FILE = path.join(STORE_DIR, "fashion-users.json");
+type FashionStoreSchema = {
+  users: FashionUser[];
+  logs: FashionGenerationLog[];
+};
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const STORE_PATH = path.join(DATA_DIR, "fashion-users.json");
+
+const defaultStore = (): FashionStoreSchema => ({
+  users: [],
+  logs: [],
+});
 
 function isProductionLike() {
   return process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 }
 
-function getDefaultStore(): FashionStoreShape {
-  return { users: [] };
-}
+async function ensureStoreFile() {
+  if (isProductionLike()) {
+    return;
+  }
 
-async function safeReadJsonFile<T>(filePath: string): Promise<T | null> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+
   try {
-    const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
+    await fs.access(STORE_PATH);
   } catch {
-    return null;
+    await fs.writeFile(
+      STORE_PATH,
+      JSON.stringify(defaultStore(), null, 2),
+      "utf8",
+    );
   }
 }
 
-async function readStore(): Promise<FashionStoreShape> {
-  const existing = await safeReadJsonFile<FashionStoreShape>(STORE_FILE);
-  return existing ?? getDefaultStore();
+async function readStore(): Promise<FashionStoreSchema> {
+  if (!isProductionLike()) {
+    await ensureStoreFile();
+  }
+
+  try {
+    const raw = await fs.readFile(STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Partial<FashionStoreSchema>;
+
+    return {
+      users: Array.isArray(parsed.users) ? parsed.users : [],
+      logs: Array.isArray(parsed.logs) ? parsed.logs : [],
+    };
+  } catch {
+    return defaultStore();
+  }
 }
 
-async function writeStore(store: FashionStoreShape) {
-  if (isProductionLike()) return;
-  await fs.mkdir(STORE_DIR, { recursive: true });
-  await fs.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+async function writeStore(store: FashionStoreSchema) {
+  if (isProductionLike()) {
+    return;
+  }
+
+  await ensureStoreFile();
+  await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
 }
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-export async function getAllFashionUsers() {
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function createId(prefix: string) {
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+export async function getFashionStore() {
+  return readStore();
+}
+
+export async function listFashionUsers() {
   const store = await readStore();
-  return store.users;
+
+  return [...store.users].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
+}
+
+export async function getAllFashionUsers() {
+  return listFashionUsers();
 }
 
 export async function getFashionUserByEmail(email: string) {
-  const store = await readStore();
   const normalized = normalizeEmail(email);
-
-  return store.users.find((u) => normalizeEmail(u.email) === normalized) || null;
-}
-
-export async function validateFashionUser(email: string, password: string) {
-  const user = await getFashionUserByEmail(email);
-  if (!user) return null;
-  if ((user.password ?? "") !== password) return null;
-
-  const isActive = user.active ?? user.isActive ?? true;
-  if (isActive === false) return null;
-
-  return user;
-}
-
-export async function upsertFashionUser(user: FashionUserRecord) {
   const store = await readStore();
-  const normalized = normalizeEmail(user.email);
 
-  const normalizedUser: FashionUserRecord = {
-    ...user,
-    email: normalized,
-    companyName: user.companyName ?? user.company,
-    company: user.company ?? user.companyName,
-    active: user.active ?? user.isActive ?? true,
-    isActive: user.isActive ?? user.active ?? true,
-    generatedCount: user.generatedCount ?? 0,
-    generationLogs: user.generationLogs ?? [],
+  return (
+    store.users.find((user) => normalizeEmail(user.email) === normalized) ??
+    null
+  );
+}
+
+export async function getFashionUserById(id: string) {
+  const store = await readStore();
+  return store.users.find((user) => user.id === id) ?? null;
+}
+
+export async function upsertFashionUser(
+  input: Partial<FashionUser> & {
+    email: string;
+    name?: string;
+  },
+) {
+  const store = await readStore();
+  const normalizedEmail = normalizeEmail(input.email);
+  const existingIndex = store.users.findIndex(
+    (user) => normalizeEmail(user.email) === normalizedEmail,
+  );
+  const existing = existingIndex >= 0 ? store.users[existingIndex] : null;
+
+  const nextUser: FashionUser = {
+    id: existing?.id ?? createId("fashion_user"),
+    email: normalizedEmail,
+    name: input.name ?? existing?.name ?? normalizedEmail.split("@")[0],
+    password: input.password ?? existing?.password,
+    company: input.company ?? existing?.company,
+    role: input.role ?? existing?.role ?? "client",
+    modules: input.modules ?? existing?.modules ?? ["fashion"],
+    credits:
+      typeof input.credits === "number"
+        ? Math.max(0, Math.floor(input.credits))
+        : existing?.credits ?? 0,
+    isActive: input.isActive ?? existing?.isActive ?? true,
+    createdAt: existing?.createdAt ?? nowIso(),
+    updatedAt: nowIso(),
+    lastGeneratedAt: input.lastGeneratedAt ?? existing?.lastGeneratedAt,
   };
 
-  const index = store.users.findIndex(
-    (u) => normalizeEmail(u.email) === normalized
-  );
-
-  if (index >= 0) {
-    store.users[index] = { ...store.users[index], ...normalizedUser };
+  if (existingIndex >= 0) {
+    store.users[existingIndex] = nextUser;
   } else {
-    store.users.push(normalizedUser);
+    store.users.push(nextUser);
   }
 
   await writeStore(store);
-  return normalizedUser;
+  return nextUser;
 }
 
 export async function setFashionUserCredits(email: string, credits: number) {
-  const store = await readStore();
-  const normalized = normalizeEmail(email);
-
-  const index = store.users.findIndex(
-    (u) => normalizeEmail(u.email) === normalized
-  );
-
-  if (index < 0) return null;
-
-  store.users[index].credits = Math.max(0, Number(credits) || 0);
-
-  await writeStore(store);
-  return store.users[index];
-}
-
-export async function consumeFashionCredits(email: string, amount = 1) {
-  const store = await readStore();
-  const normalized = normalizeEmail(email);
-
-  const user = store.users.find(
-    (u) => normalizeEmail(u.email) === normalized
-  );
+  const user = await getFashionUserByEmail(email);
 
   if (!user) {
-    return { ok: false, error: "user not found", user: null };
+    return null;
   }
 
-  if ((user.credits ?? 0) < amount) {
-    return { ok: false, error: "no credits", user };
-  }
-
-  user.credits -= amount;
-  await writeStore(store);
-
-  return { ok: true, error: null, user };
+  return upsertFashionUser({
+    ...user,
+    email: user.email,
+    credits: Math.max(0, Math.floor(credits)),
+  });
 }
 
-export async function addFashionGenerationLog(params: {
-  email: string;
-  categoryCount: number;
-  country?: string;
-  prompt?: string;
-}) {
-  const store = await readStore();
-  const normalized = normalizeEmail(params.email);
+export async function addFashionUserCredits(email: string, amount: number) {
+  const user = await getFashionUserByEmail(email);
 
-  const user = store.users.find(
-    (u) => normalizeEmail(u.email) === normalized
-  );
+  if (!user) {
+    return null;
+  }
 
-  if (!user) return null;
+  return setFashionUserCredits(user.email, user.credits + amount);
+}
 
-  if (!user.generationLogs) user.generationLogs = [];
+export async function consumeFashionCredits(email: string, amount: number) {
+  const user = await getFashionUserByEmail(email);
 
-  user.generationLogs.unshift({
-    createdAt: new Date().toISOString(),
-    categoryCount: params.categoryCount,
-    country: params.country,
-    prompt: params.prompt,
+  if (!user) {
+    return {
+      ok: false as const,
+      reason: "USER_NOT_FOUND" as const,
+      user: null,
+    };
+  }
+
+  if (!user.isActive) {
+    return {
+      ok: false as const,
+      reason: "USER_INACTIVE" as const,
+      user,
+    };
+  }
+
+  if (user.credits < amount) {
+    return {
+      ok: false as const,
+      reason: "INSUFFICIENT_CREDITS" as const,
+      user,
+    };
+  }
+
+  const updated = await upsertFashionUser({
+    ...user,
+    email: user.email,
+    credits: user.credits - amount,
+    lastGeneratedAt: nowIso(),
   });
 
-  user.generatedCount = (user.generatedCount || 0) + 1;
-
-  await writeStore(store);
-  return user;
-}
-
-/* ========================= */
-/* LEGACY COMPAT EXPORTS */
-/* ========================= */
-
-export async function findUserByCredentials(email: string, password: string) {
-  return validateFashionUser(email, password);
-}
-
-export function getPublicUser(user: FashionUserRecord | null) {
-  if (!user) return null;
-
-  const companyName = user.companyName ?? user.company;
-  const active = user.active ?? user.isActive ?? true;
-
   return {
-    email: user.email,
-    name: user.name,
-    credits: user.credits,
-    role: user.role,
-    company: companyName,
-    companyName,
-    isActive: active,
-    active,
-    generatedCount: user.generatedCount ?? 0,
+    ok: true as const,
+    user: updated,
   };
 }
 
-export async function createFashionUser(user: FashionUserRecord) {
-  return upsertFashionUser(user);
+export async function addFashionGenerationLog(
+  input: Omit<FashionGenerationLog, "id" | "createdAt">,
+) {
+  const store = await readStore();
+
+  const log: FashionGenerationLog = {
+    id: createId("fashion_log"),
+    createdAt: nowIso(),
+    ...input,
+  };
+
+  store.logs.unshift(log);
+
+  if (store.logs.length > 1000) {
+    store.logs.length = 1000;
+  }
+
+  await writeStore(store);
+  return log;
 }
 
-export async function updateFashionUser(user: FashionUserRecord) {
-  return upsertFashionUser(user);
+export async function listFashionGenerationLogs(limit = 100) {
+  const store = await readStore();
+  return store.logs.slice(0, limit);
+}
+
+/* ------------------------------------------------------------------ */
+/* Compatibility layer for old fashion API routes */
+/* ------------------------------------------------------------------ */
+
+export async function findUserByCredentials(email: string, password?: string) {
+  const user = await getFashionUserByEmail(email);
+
+  if (!user || !user.isActive) {
+    return null;
+  }
+
+  if (typeof password === "string" && (user.password ?? "") !== password) {
+    return null;
+  }
+
+  return user;
+}
+
+export function getPublicUser(user: FashionUser | null) {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    company: user.company,
+    role: user.role,
+    modules: user.modules,
+    credits: user.credits,
+    isActive: user.isActive,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    lastGeneratedAt: user.lastGeneratedAt,
+  };
+}
+
+export async function createFashionUser(
+  input: Partial<FashionUser> & {
+    email: string;
+    name?: string;
+  },
+) {
+  const existing = await getFashionUserByEmail(input.email);
+
+  if (existing) {
+    return null;
+  }
+
+  return upsertFashionUser(input);
+}
+
+export async function findUserByIdIncludingInactive(idOrEmail: string) {
+  const byId = await getFashionUserById(idOrEmail);
+  if (byId) return byId;
+
+  return getFashionUserByEmail(idOrEmail);
 }
 
 export async function getAllPublicUsers() {
-  const users = await getAllFashionUsers();
-  return users.map((u) => getPublicUser(u));
+  const users = await listFashionUsers();
+  return users.map((user) => getPublicUser(user));
 }
 
-export async function findUserByIdIncludingInactive(email: string) {
-  return getFashionUserByEmail(email);
+export async function updateFashionUser(
+  input: Partial<FashionUser> & {
+    email: string;
+    name?: string;
+  },
+) {
+  return upsertFashionUser(input);
+}
+
+export async function findUserById(idOrEmail: string) {
+  const byId = await getFashionUserById(idOrEmail);
+  if (byId && byId.isActive) return byId;
+
+  const byEmail = await getFashionUserByEmail(idOrEmail);
+  if (byEmail && byEmail.isActive) return byEmail;
+
+  return null;
+}
+
+export async function decrementCredit(idOrEmail: string, amount = 1) {
+  const user =
+    (await getFashionUserById(idOrEmail)) ??
+    (await getFashionUserByEmail(idOrEmail));
+
+  if (!user) {
+    return {
+      ok: false as const,
+      reason: "USER_NOT_FOUND" as const,
+      user: null,
+    };
+  }
+
+  return consumeFashionCredits(user.email, amount);
 }
