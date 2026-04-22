@@ -3,11 +3,19 @@ import path from "path";
 
 export type FashionUserRecord = {
   email: string;
-  password: string;
+  password?: string;
   credits: number;
+
+  // legacy / admin uyumluluğu
+  name?: string;
+  company?: string;
+  isActive?: boolean;
+
+  // yeni alanlar
   active?: boolean;
   role?: "admin" | "client";
   companyName?: string;
+
   generatedCount?: number;
   generationLogs?: Array<{
     createdAt: string;
@@ -64,14 +72,18 @@ export async function getAllFashionUsers() {
 export async function getFashionUserByEmail(email: string) {
   const store = await readStore();
   const normalized = normalizeEmail(email);
-  return store.users.find(u => normalizeEmail(u.email) === normalized) || null;
+
+  return store.users.find((u) => normalizeEmail(u.email) === normalized) || null;
 }
 
 export async function validateFashionUser(email: string, password: string) {
   const user = await getFashionUserByEmail(email);
   if (!user) return null;
-  if (user.password !== password) return null;
-  if (user.active === false) return null;
+  if ((user.password ?? "") !== password) return null;
+
+  const isActive = user.active ?? user.isActive ?? true;
+  if (isActive === false) return null;
+
   return user;
 }
 
@@ -79,18 +91,45 @@ export async function upsertFashionUser(user: FashionUserRecord) {
   const store = await readStore();
   const normalized = normalizeEmail(user.email);
 
+  const normalizedUser: FashionUserRecord = {
+    ...user,
+    email: normalized,
+    companyName: user.companyName ?? user.company,
+    company: user.company ?? user.companyName,
+    active: user.active ?? user.isActive ?? true,
+    isActive: user.isActive ?? user.active ?? true,
+    generatedCount: user.generatedCount ?? 0,
+    generationLogs: user.generationLogs ?? [],
+  };
+
   const index = store.users.findIndex(
-    u => normalizeEmail(u.email) === normalized
+    (u) => normalizeEmail(u.email) === normalized
   );
 
   if (index >= 0) {
-    store.users[index] = { ...store.users[index], ...user };
+    store.users[index] = { ...store.users[index], ...normalizedUser };
   } else {
-    store.users.push(user);
+    store.users.push(normalizedUser);
   }
 
   await writeStore(store);
-  return user;
+  return normalizedUser;
+}
+
+export async function setFashionUserCredits(email: string, credits: number) {
+  const store = await readStore();
+  const normalized = normalizeEmail(email);
+
+  const index = store.users.findIndex(
+    (u) => normalizeEmail(u.email) === normalized
+  );
+
+  if (index < 0) return null;
+
+  store.users[index].credits = Math.max(0, Number(credits) || 0);
+
+  await writeStore(store);
+  return store.users[index];
 }
 
 export async function consumeFashionCredits(email: string, amount = 1) {
@@ -98,12 +137,14 @@ export async function consumeFashionCredits(email: string, amount = 1) {
   const normalized = normalizeEmail(email);
 
   const user = store.users.find(
-    u => normalizeEmail(u.email) === normalized
+    (u) => normalizeEmail(u.email) === normalized
   );
 
-  if (!user) return { ok: false, error: "user not found", user: null };
+  if (!user) {
+    return { ok: false, error: "user not found", user: null };
+  }
 
-  if (user.credits < amount) {
+  if ((user.credits ?? 0) < amount) {
     return { ok: false, error: "no credits", user };
   }
 
@@ -120,7 +161,11 @@ export async function addFashionGenerationLog(params: {
   prompt?: string;
 }) {
   const store = await readStore();
-  const user = store.users.find(u => u.email === params.email);
+  const normalized = normalizeEmail(params.email);
+
+  const user = store.users.find(
+    (u) => normalizeEmail(u.email) === normalized
+  );
 
   if (!user) return null;
 
@@ -140,20 +185,28 @@ export async function addFashionGenerationLog(params: {
 }
 
 /* ========================= */
-/* 🔥 LEGACY COMPAT (FIX) 🔥 */
+/* LEGACY COMPAT EXPORTS */
 /* ========================= */
 
 export async function findUserByCredentials(email: string, password: string) {
   return validateFashionUser(email, password);
 }
 
-export function getPublicUser(user: FashionUserRecord) {
+export function getPublicUser(user: FashionUserRecord | null) {
   if (!user) return null;
+
+  const companyName = user.companyName ?? user.company;
+  const active = user.active ?? user.isActive ?? true;
+
   return {
     email: user.email,
+    name: user.name,
     credits: user.credits,
     role: user.role,
-    companyName: user.companyName,
+    company: companyName,
+    companyName,
+    isActive: active,
+    active,
     generatedCount: user.generatedCount ?? 0,
   };
 }
@@ -168,7 +221,7 @@ export async function updateFashionUser(user: FashionUserRecord) {
 
 export async function getAllPublicUsers() {
   const users = await getAllFashionUsers();
-  return users.map(u => getPublicUser(u));
+  return users.map((u) => getPublicUser(u));
 }
 
 export async function findUserByIdIncludingInactive(email: string) {
