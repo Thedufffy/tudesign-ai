@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ReferenceLogoItem } from "@/lib/reference-types";
 
 export type ReferenceItem = {
   id: string;
@@ -8,13 +9,6 @@ export type ReferenceItem = {
   image: string;
   featured?: boolean;
   createdAt: string;
-};
-
-export type ReferenceLogoItem = {
-  id: string;
-  name: string;
-  image: string;
-  createdAt?: string;
 };
 
 type ReferenceStore = {
@@ -125,12 +119,14 @@ export async function deleteReference(id: string) {
 
 /* logos */
 
-export async function getReferenceLogos() {
+export async function getReferenceLogos(): Promise<ReferenceLogoItem[]> {
   const store = await readStore();
   return store.logos;
 }
 
-export async function saveReferenceLogos(logos: ReferenceLogoItem[]) {
+export async function saveReferenceLogos(
+  logos: ReferenceLogoItem[]
+): Promise<ReferenceLogoItem[]> {
   const store = await readStore();
   store.logos = logos;
   await writeStore(store);
