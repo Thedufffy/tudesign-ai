@@ -10,8 +10,16 @@ export type ReferenceItem = {
   createdAt: string;
 };
 
+export type ReferenceLogoItem = {
+  id: string;
+  name: string;
+  image: string;
+  createdAt?: string;
+};
+
 type ReferenceStore = {
   references: ReferenceItem[];
+  logos: ReferenceLogoItem[];
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -22,7 +30,10 @@ function isProductionLike() {
 }
 
 function getDefaultStore(): ReferenceStore {
-  return { references: [] };
+  return {
+    references: [],
+    logos: [],
+  };
 }
 
 async function ensureStoreFile() {
@@ -51,9 +62,8 @@ async function readStore(): Promise<ReferenceStore> {
     const parsed = JSON.parse(raw);
 
     return {
-      references: Array.isArray(parsed.references)
-        ? parsed.references
-        : [],
+      references: Array.isArray(parsed.references) ? parsed.references : [],
+      logos: Array.isArray(parsed.logos) ? parsed.logos : [],
     };
   } catch {
     return getDefaultStore();
@@ -71,9 +81,7 @@ function createId() {
   return "ref_" + Math.random().toString(36).slice(2, 10);
 }
 
-/* ========================= */
-/* EXPORTS */
-/* ========================= */
+/* references */
 
 export async function getAllReferences() {
   const store = await readStore();
@@ -110,11 +118,21 @@ export async function createReference(input: {
 
 export async function deleteReference(id: string) {
   const store = await readStore();
-
-  const next = store.references.filter((r) => r.id !== id);
-
-  store.references = next;
-
+  store.references = store.references.filter((r) => r.id !== id);
   await writeStore(store);
   return true;
+}
+
+/* logos */
+
+export async function getReferenceLogos() {
+  const store = await readStore();
+  return store.logos;
+}
+
+export async function saveReferenceLogos(logos: ReferenceLogoItem[]) {
+  const store = await readStore();
+  store.logos = logos;
+  await writeStore(store);
+  return store.logos;
 }
