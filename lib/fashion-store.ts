@@ -1,5 +1,3 @@
-// lib/fashion-store.ts
-
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -43,43 +41,14 @@ async function safeReadJsonFile<T>(filePath: string): Promise<T | null> {
   }
 }
 
-async function ensureStoreFile() {
-  if (isProductionLike()) {
-    return;
-  }
-
-  await fs.mkdir(STORE_DIR, { recursive: true });
-
-  try {
-    await fs.access(STORE_FILE);
-  } catch {
-    await fs.writeFile(
-      STORE_FILE,
-      JSON.stringify(getDefaultStore(), null, 2),
-      "utf8"
-    );
-  }
-}
-
 async function readStore(): Promise<FashionStoreShape> {
-  // Production/Vercel: read-only davran
-  if (isProductionLike()) {
-    const existing = await safeReadJsonFile<FashionStoreShape>(STORE_FILE);
-    return existing ?? getDefaultStore();
-  }
-
-  await ensureStoreFile();
   const existing = await safeReadJsonFile<FashionStoreShape>(STORE_FILE);
   return existing ?? getDefaultStore();
 }
 
 async function writeStore(store: FashionStoreShape) {
-  // Production/Vercel: dosya sistemi read-only olduğu için yazma
-  if (isProductionLike()) {
-    return;
-  }
-
-  await ensureStoreFile();
+  if (isProductionLike()) return;
+  await fs.mkdir(STORE_DIR, { recursive: true });
   await fs.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
 }
 
@@ -95,10 +64,7 @@ export async function getAllFashionUsers() {
 export async function getFashionUserByEmail(email: string) {
   const store = await readStore();
   const normalized = normalizeEmail(email);
-
-  return (
-    store.users.find((user) => normalizeEmail(user.email) === normalized) || null
-  );
+  return store.users.find(u => normalizeEmail(u.email) === normalized) || null;
 }
 
 export async function validateFashionUser(email: string, password: string) {
@@ -114,83 +80,37 @@ export async function upsertFashionUser(user: FashionUserRecord) {
   const normalized = normalizeEmail(user.email);
 
   const index = store.users.findIndex(
-    (item) => normalizeEmail(item.email) === normalized
+    u => normalizeEmail(u.email) === normalized
   );
 
-  const nextUser: FashionUserRecord = {
-    ...user,
-    email: normalized,
-    generatedCount: user.generatedCount ?? 0,
-    generationLogs: user.generationLogs ?? [],
-  };
-
   if (index >= 0) {
-    store.users[index] = {
-      ...store.users[index],
-      ...nextUser,
-    };
+    store.users[index] = { ...store.users[index], ...user };
   } else {
-    store.users.push(nextUser);
+    store.users.push(user);
   }
 
   await writeStore(store);
-  return nextUser;
-}
-
-export async function setFashionUserCredits(email: string, credits: number) {
-  const store = await readStore();
-  const normalized = normalizeEmail(email);
-
-  const index = store.users.findIndex(
-    (item) => normalizeEmail(item.email) === normalized
-  );
-
-  if (index < 0) return null;
-
-  store.users[index].credits = Math.max(0, Number(credits) || 0);
-  await writeStore(store);
-
-  return store.users[index];
+  return user;
 }
 
 export async function consumeFashionCredits(email: string, amount = 1) {
   const store = await readStore();
   const normalized = normalizeEmail(email);
 
-  const index = store.users.findIndex(
-    (item) => normalizeEmail(item.email) === normalized
+  const user = store.users.find(
+    u => normalizeEmail(u.email) === normalized
   );
 
-  if (index < 0) {
-    return {
-      ok: false,
-      error: "Kullanıcı bulunamadı.",
-      user: null,
-    };
+  if (!user) return { ok: false, error: "user not found", user: null };
+
+  if (user.credits < amount) {
+    return { ok: false, error: "no credits", user };
   }
 
-  const user = store.users[index];
-  const currentCredits = Number(user.credits || 0);
-  const nextCredits = currentCredits - amount;
-
-  if (nextCredits < 0) {
-    return {
-      ok: false,
-      error: "Yetersiz kredi.",
-      user,
-    };
-  }
-
-  user.credits = nextCredits;
-
-  // Production'da writeStore no-op olduğu için sistem patlamaz
+  user.credits -= amount;
   await writeStore(store);
 
-  return {
-    ok: true,
-    error: null,
-    user,
-  };
+  return { ok: true, error: null, user };
 }
 
 export async function addFashionGenerationLog(params: {
@@ -200,21 +120,11 @@ export async function addFashionGenerationLog(params: {
   prompt?: string;
 }) {
   const store = await readStore();
-  const normalized = normalizeEmail(params.email);
+  const user = store.users.find(u => u.email === params.email);
 
-  const index = store.users.findIndex(
-    (item) => normalizeEmail(item.email) === normalized
-  );
+  if (!user) return null;
 
-  if (index < 0) {
-    return null;
-  }
-
-  const user = store.users[index];
-
-  if (!Array.isArray(user.generationLogs)) {
-    user.generationLogs = [];
-  }
+  if (!user.generationLogs) user.generationLogs = [];
 
   user.generationLogs.unshift({
     createdAt: new Date().toISOString(),
@@ -223,10 +133,44 @@ export async function addFashionGenerationLog(params: {
     prompt: params.prompt,
   });
 
-  user.generationLogs = user.generationLogs.slice(0, 50);
-  user.generatedCount = Number(user.generatedCount || 0) + 1;
+  user.generatedCount = (user.generatedCount || 0) + 1;
 
   await writeStore(store);
-
   return user;
+}
+
+/* ========================= */
+/* 🔥 LEGACY COMPAT (FIX) 🔥 */
+/* ========================= */
+
+export async function findUserByCredentials(email: string, password: string) {
+  return validateFashionUser(email, password);
+}
+
+export function getPublicUser(user: FashionUserRecord) {
+  if (!user) return null;
+  return {
+    email: user.email,
+    credits: user.credits,
+    role: user.role,
+    companyName: user.companyName,
+    generatedCount: user.generatedCount ?? 0,
+  };
+}
+
+export async function createFashionUser(user: FashionUserRecord) {
+  return upsertFashionUser(user);
+}
+
+export async function updateFashionUser(user: FashionUserRecord) {
+  return upsertFashionUser(user);
+}
+
+export async function getAllPublicUsers() {
+  const users = await getAllFashionUsers();
+  return users.map(u => getPublicUser(u));
+}
+
+export async function findUserByIdIncludingInactive(email: string) {
+  return getFashionUserByEmail(email);
 }
