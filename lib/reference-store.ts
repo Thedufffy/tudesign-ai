@@ -1,71 +1,120 @@
-import fs from "fs/promises";
-import path from "path";
-import type { ReferenceLogoItem } from "./reference-types";
+import fs from "node:fs/promises";
+import path from "node:path";
 
-const dataFilePath = path.join(process.cwd(), "data", "reference-logos.json");
+export type ReferenceItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  image: string;
+  featured?: boolean;
+  createdAt: string;
+};
 
-async function ensureFile() {
+type ReferenceStore = {
+  references: ReferenceItem[];
+};
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const STORE_PATH = path.join(DATA_DIR, "references.json");
+
+function isProductionLike() {
+  return process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+}
+
+function getDefaultStore(): ReferenceStore {
+  return { references: [] };
+}
+
+async function ensureStoreFile() {
+  if (isProductionLike()) return;
+
+  await fs.mkdir(DATA_DIR, { recursive: true });
+
   try {
-    await fs.access(dataFilePath);
+    await fs.access(STORE_PATH);
   } catch {
-    await fs.mkdir(path.dirname(dataFilePath), { recursive: true });
-    await fs.writeFile(dataFilePath, "[]", "utf8");
+    await fs.writeFile(
+      STORE_PATH,
+      JSON.stringify(getDefaultStore(), null, 2),
+      "utf8"
+    );
   }
 }
 
-export async function getReferenceLogos(): Promise<ReferenceLogoItem[]> {
-  await ensureFile();
+async function readStore(): Promise<ReferenceStore> {
+  if (!isProductionLike()) {
+    await ensureStoreFile();
+  }
 
-  const raw = await fs.readFile(dataFilePath, "utf8");
-  const items = JSON.parse(raw) as ReferenceLogoItem[];
+  try {
+    const raw = await fs.readFile(STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw);
 
-  return items.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+    return {
+      references: Array.isArray(parsed.references)
+        ? parsed.references
+        : [],
+    };
+  } catch {
+    return getDefaultStore();
+  }
 }
 
-export async function saveReferenceLogos(items: ReferenceLogoItem[]) {
-  await ensureFile();
-  await fs.writeFile(dataFilePath, JSON.stringify(items, null, 2), "utf8");
-}
-// ===== LEGACY COMPAT (ESKİ API'LER İÇİN) =====
+async function writeStore(store: ReferenceStore) {
+  if (isProductionLike()) return;
 
-// login için
-export async function findUserByCredentials(email: string, password: string) {
-  return validateFashionUser(email, password);
+  await ensureStoreFile();
+  await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
 }
 
-// public user (frontend'e güvenli veri)
-export function getPublicUser(user: FashionUserRecord) {
-  if (!user) return null;
+function createId() {
+  return "ref_" + Math.random().toString(36).slice(2, 10);
+}
 
-  return {
-    email: user.email,
-    credits: user.credits,
-    role: user.role,
-    companyName: user.companyName,
-    generatedCount: user.generatedCount ?? 0,
+/* ========================= */
+/* EXPORTS */
+/* ========================= */
+
+export async function getAllReferences() {
+  const store = await readStore();
+  return store.references;
+}
+
+export async function getReferenceById(id: string) {
+  const store = await readStore();
+  return store.references.find((r) => r.id === id) || null;
+}
+
+export async function createReference(input: {
+  title: string;
+  subtitle?: string;
+  image: string;
+  featured?: boolean;
+}) {
+  const store = await readStore();
+
+  const newItem: ReferenceItem = {
+    id: createId(),
+    title: input.title,
+    subtitle: input.subtitle,
+    image: input.image,
+    featured: input.featured ?? false,
+    createdAt: new Date().toISOString(),
   };
+
+  store.references.unshift(newItem);
+
+  await writeStore(store);
+  return newItem;
 }
 
-// admin create
-export async function createFashionUser(user: FashionUserRecord) {
-  return upsertFashionUser(user);
-}
+export async function deleteReference(id: string) {
+  const store = await readStore();
 
-// admin update
-export async function updateFashionUser(user: FashionUserRecord) {
-  return upsertFashionUser(user);
-}
+  const next = store.references.filter((r) => r.id !== id);
 
-// admin list
-export async function getAllPublicUsers() {
-  const users = await getAllFashionUsers();
+  store.references = next;
 
-  return users.map((u) => getPublicUser(u));
-}
-
-// admin find by id (email bazlı kullanıyoruz)
-export async function findUserByIdIncludingInactive(email: string) {
-  return getFashionUserByEmail(email);
+  await writeStore(store);
+  return true;
 }
